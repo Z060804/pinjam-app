@@ -1,0 +1,88 @@
+import React, { useState, useEffect } from 'react';
+import axios from '../../services/api';
+import { PeminjamanFull } from '../../types';
+import { useDebounce } from '../../hooks/useDebounce';
+import { PelacakanSearch } from './PelacakanSearch';
+import { PelacakanDetail } from './PelacakanDetail';
+import { LoadingSpinner } from '../common/LoadingSpinner';
+import { DEBOUNCE_DELAY_MS } from '../../constants';
+import { FileQuestion } from 'lucide-react';
+
+interface PelacakanViewProps {
+  initialSearchId?: string;
+}
+
+export const PelacakanView: React.FC<PelacakanViewProps> = ({ initialSearchId = '' }) => {
+  const [searchId, setSearchId] = useState<string>(initialSearchId);
+  const [result, setResult] = useState<PeminjamanFull | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [notFound, setNotFound] = useState<boolean>(false);
+
+  const debouncedSearchId = useDebounce(searchId.trim(), DEBOUNCE_DELAY_MS);
+
+  useEffect(() => {
+    if (initialSearchId) {
+      setSearchId(initialSearchId);
+    }
+  }, [initialSearchId]);
+
+  useEffect(() => {
+    if (!debouncedSearchId) {
+      setResult(null);
+      setNotFound(false);
+      return;
+    }
+
+    const fetchPeminjaman = async () => {
+      setLoading(true);
+      setNotFound(false);
+      try {
+        const response = await axios.get(`/api/peminjaman/${debouncedSearchId}`);
+        if (response.data?.success && response.data?.data) {
+          setResult(response.data.data);
+        } else {
+          setResult(null);
+          setNotFound(true);
+        }
+      } catch (err) {
+        setResult(null);
+        setNotFound(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPeminjaman();
+  }, [debouncedSearchId]);
+
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <div>
+        <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Pelacakan Peminjaman</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Pantau status permohonan peminjaman ruangan, kendaraan, atau alat Anda secara real-time.
+        </p>
+      </div>
+
+      <PelacakanSearch
+        searchQuery={searchId}
+        onSearchChange={setSearchId}
+        onSelectSample={(sample) => setSearchId(sample)}
+      />
+
+      {loading && <LoadingSpinner message="Mencari riwayat peminjaman..." />}
+
+      {!loading && notFound && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2">
+          <FileQuestion className="w-10 h-10 text-slate-300 mx-auto" />
+          <h4 className="text-sm font-bold text-slate-800">Peminjaman Tidak Ditemukan</h4>
+          <p className="text-xs text-slate-500">
+            Pastikan ID peminjaman yang Anda masukkan benar (contoh: <code>PMJ-202610-001</code>).
+          </p>
+        </div>
+      )}
+
+      {!loading && result && <PelacakanDetail data={result} />}
+    </div>
+  );
+};
