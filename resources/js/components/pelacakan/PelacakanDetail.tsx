@@ -57,11 +57,11 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
         <div className="flex items-center gap-2 mb-3">
           <Layers className="w-4 h-4 text-emerald-600" />
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-            Daftar Item yang Dipinjam ({data.items.length})
+            Daftar Item yang Dipinjam ({(data.items || []).length})
           </h4>
         </div>
         <div className="space-y-2">
-          {data.items.map((pi) => (
+          {(data.items || []).map((pi) => (
             <div
               key={pi.id}
               className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs"

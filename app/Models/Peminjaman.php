@@ -207,6 +207,50 @@ class Peminjaman extends Model
         return trim("{$tgl} {$wkt}");
     }
 
+    public function getTglMulaiAttribute()
+    {
+        if (!empty($this->attributes['tgl_mulai'])) {
+            return $this->attributes['tgl_mulai'];
+        }
+        if (!empty($this->attributes['mulai'])) {
+            return substr($this->attributes['mulai'], 0, 10);
+        }
+        return null;
+    }
+
+    public function getTglSelesaiAttribute()
+    {
+        if (!empty($this->attributes['tgl_selesai'])) {
+            return $this->attributes['tgl_selesai'];
+        }
+        if (!empty($this->attributes['selesai'])) {
+            return substr($this->attributes['selesai'], 0, 10);
+        }
+        return null;
+    }
+
+    public function getWaktuMulaiAttribute()
+    {
+        if (!empty($this->attributes['waktu_mulai'])) {
+            return $this->attributes['waktu_mulai'];
+        }
+        if (!empty($this->attributes['mulai']) && strlen($this->attributes['mulai']) >= 16) {
+            return substr($this->attributes['mulai'], 11, 5);
+        }
+        return '08:00';
+    }
+
+    public function getWaktuSelesaiAttribute()
+    {
+        if (!empty($this->attributes['waktu_selesai'])) {
+            return $this->attributes['waktu_selesai'];
+        }
+        if (!empty($this->attributes['selesai']) && strlen($this->attributes['selesai']) >= 16) {
+            return substr($this->attributes['selesai'], 11, 5);
+        }
+        return '16:00';
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(PeminjamanItem::class, 'peminjaman_id', 'id_peminjaman');

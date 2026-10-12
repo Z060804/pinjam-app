@@ -138,16 +138,14 @@ class SimpruController extends Controller
      */
     public function getAllPeminjaman(): JsonResponse
     {
-        $records = Peminjaman::with(['items.item.jenis'])
+        $records = Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
             ->orderBy('created_at', 'desc')
             ->get();
 
         $formatted = $records->map(function ($p) {
-            // Peminjaman bisa memuat campuran kategori (mis. ruangan + proyektor),
-            // dan urutan item mengikuti urutan keranjang pelanggan. Ambil kategori
-            // yang paling utama (ruangan > kendaraan > perlengkapan) supaya label
-            // jenis tidak berubah-ubah hanya karena urutan pemilihan.
-            $jenisIds = $p->items
+            $itemList = $p->items->isNotEmpty() ? $p->items : $p->itemPeminjaman;
+
+            $jenisIds = $itemList
                 ->map(fn ($pi) => $pi->item?->id_jenis)
                 ->filter()
                 ->unique();
@@ -159,44 +157,44 @@ class SimpruController extends Controller
                 default => 'ruangan',
             };
 
-            $itemNames = $p->items->map(function ($pi) {
+            $itemNames = $itemList->map(function ($pi) {
                 return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
             })->join(', ');
 
-            $tglMulaiStr = Carbon::parse($p->tgl_mulai)->format('Y-m-d');
-            $tglSelesaiStr = Carbon::parse($p->tgl_selesai)->format('Y-m-d');
-            $waktuMulaiStr = $p->waktu_mulai ?: '08:00';
-            $waktuSelesaiStr = $p->waktu_selesai ?: '16:00';
+            $tglMulaiStr = $p->tgl_mulai ? Carbon::parse($p->tgl_mulai)->format('Y-m-d') : ($p->mulai ? substr((string)$p->mulai, 0, 10) : date('Y-m-d'));
+            $tglSelesaiStr = $p->tgl_selesai ? Carbon::parse($p->tgl_selesai)->format('Y-m-d') : ($p->selesai ? substr((string)$p->selesai, 0, 10) : $tglMulaiStr);
+            $waktuMulaiStr = $p->waktu_mulai ?: (strlen((string)$p->mulai) >= 16 ? substr((string)$p->mulai, 11, 5) : '08:00');
+            $waktuSelesaiStr = $p->waktu_selesai ?: (strlen((string)$p->selesai) >= 16 ? substr((string)$p->selesai, 11, 5) : '16:00');
 
             return [
-                'id' => $p->id,
-                'id_peminjaman' => $p->id,
+                'id' => $p->id_peminjaman ?? $p->id,
+                'id_peminjaman' => $p->id_peminjaman ?? $p->id,
                 'tgl_pengajuan' => Carbon::parse($p->tgl_pengajuan)->format('Y-m-d'),
                 'nip' => $p->nip ?: '-',
                 'pihak_pemohon' => $p->pihak_pemohon ?: 'Internal Kemenag Sleman',
-                'unit_pemohon' => $p->unit_pemohon,
-                'unit_kerja' => $p->unit_pemohon,
-                'nama_pemohon' => $p->nama_pemohon,
-                'nama_peminjam' => $p->nama_pemohon,
+                'unit_pemohon' => $p->unit_pemohon ?? $p->unit_kerja,
+                'unit_kerja' => $p->unit_kerja ?? $p->unit_pemohon,
+                'nama_pemohon' => $p->nama_pemohon ?? $p->nama_peminjam,
+                'nama_peminjam' => $p->nama_peminjam ?? $p->nama_pemohon,
                 'nomor_hp' => $p->nomor_hp ?: '-',
-                'penanggung_jawab' => $p->penanggung_jawab ?: $p->nama_pemohon,
+                'penanggung_jawab' => $p->penanggung_jawab ?: ($p->nama_pemohon ?? $p->nama_peminjam),
                 'jumlah_peserta' => $p->jumlah_peserta ?: 1,
                 'ruangan' => $itemNames ?: 'Sarana Prasarana',
                 'tgl_mulai' => $tglMulaiStr,
                 'tgl_selesai' => $tglSelesaiStr,
                 'waktu_mulai' => $waktuMulaiStr,
                 'waktu_selesai' => $waktuSelesaiStr,
-                'mulai' => $tglMulaiStr . ' ' . $waktuMulaiStr,
-                'selesai' => $tglSelesaiStr . ' ' . $waktuSelesaiStr,
+                'mulai' => $p->mulai ?: ($tglMulaiStr . ' ' . $waktuMulaiStr),
+                'selesai' => $p->selesai ?: ($tglSelesaiStr . ' ' . $waktuSelesaiStr),
                 'kegiatan' => $p->keperluan,
                 'keperluan' => $p->keperluan,
                 'status' => $p->status,
-                'surat_url' => $p->surat_url,
-                'surat_peminjaman' => $p->surat_url,
+                'surat_url' => $p->surat_url ?? $p->surat_peminjaman,
+                'surat_peminjaman' => $p->surat_peminjaman ?? $p->surat_url,
                 'jenis' => $jenisName,
                 'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
                 'petugas' => $p->petugas,
-                'items' => $p->items->map(fn($it) => [
+                'items' => $itemList->map(fn($it) => [
                     'id' => $it->id,
                     'item_id' => $it->item_id,
                     'jumlah' => $it->jumlah,
@@ -217,7 +215,10 @@ class SimpruController extends Controller
      */
     public function getPeminjamanById(string $id): JsonResponse
     {
-        $peminjaman = Peminjaman::with(['items.item.jenis'])->find($id);
+        $peminjaman = Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
+            ->where('id', $id)
+            ->orWhere('id_peminjaman', $id)
+            ->first();
 
         if (!$peminjaman) {
             return response()->json([
@@ -226,9 +227,9 @@ class SimpruController extends Controller
             ], 404);
         }
 
-        // Tentukan kategori jenis dengan analisis prioritas (Ruangan > Kendaraan > Perlengkapan)
-        // agar peminjaman campuran tidak salah label karena urutan item.
-        $jenisIds = $peminjaman->items
+        $itemList = $peminjaman->items->isNotEmpty() ? $peminjaman->items : $peminjaman->itemPeminjaman;
+
+        $jenisIds = $itemList
             ->map(fn ($pi) => $pi->item?->id_jenis)
             ->filter()
             ->unique();
@@ -240,28 +241,45 @@ class SimpruController extends Controller
             default => 'ruangan',
         };
 
-        $itemNames = $peminjaman->items->map(function ($pi) {
+        $itemNames = $itemList->map(function ($pi) {
             return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
         })->join(', ');
 
+        $tglMulaiStr = $peminjaman->tgl_mulai ? Carbon::parse($peminjaman->tgl_mulai)->format('Y-m-d') : ($peminjaman->mulai ? substr((string)$peminjaman->mulai, 0, 10) : date('Y-m-d'));
+        $tglSelesaiStr = $peminjaman->tgl_selesai ? Carbon::parse($peminjaman->tgl_selesai)->format('Y-m-d') : ($peminjaman->selesai ? substr((string)$peminjaman->selesai, 0, 10) : $tglMulaiStr);
+        $waktuMulaiStr = $peminjaman->waktu_mulai ?: (strlen((string)$peminjaman->mulai) >= 16 ? substr((string)$peminjaman->mulai, 11, 5) : '08:00');
+        $waktuSelesaiStr = $peminjaman->waktu_selesai ?: (strlen((string)$peminjaman->selesai) >= 16 ? substr((string)$peminjaman->selesai, 11, 5) : '16:00');
+
         $result = [
-            'id_peminjaman' => $peminjaman->id,
-            'id' => $peminjaman->id,
+            'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
+            'id' => $peminjaman->id_peminjaman ?? $peminjaman->id,
             'tgl_pengajuan' => Carbon::parse($peminjaman->tgl_pengajuan)->format('Y-m-d'),
-            'nip' => $peminjaman->nip,
-            'nama_peminjam' => $peminjaman->nama_pemohon,
-            'unit_kerja' => $peminjaman->unit_pemohon,
-            'mulai' => Carbon::parse($peminjaman->tgl_mulai)->format('Y-m-d') . ' ' . $peminjaman->waktu_mulai,
-            'selesai' => Carbon::parse($peminjaman->tgl_selesai)->format('Y-m-d') . ' ' . $peminjaman->waktu_selesai,
+            'nip' => $peminjaman->nip ?: '-',
+            'nama_pemohon' => $peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam,
+            'nama_peminjam' => $peminjaman->nama_peminjam ?? $peminjaman->nama_pemohon,
+            'unit_pemohon' => $peminjaman->unit_pemohon ?? $peminjaman->unit_kerja,
+            'unit_kerja' => $peminjaman->unit_kerja ?? $peminjaman->unit_pemohon,
+            'pihak_pemohon' => $peminjaman->pihak_pemohon ?: 'Internal Kemenag Sleman',
+            'nomor_hp' => $peminjaman->nomor_hp ?: '-',
+            'penanggung_jawab' => $peminjaman->penanggung_jawab ?: ($peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam),
+            'jumlah_peserta' => $peminjaman->jumlah_peserta ?: 1,
+            'tgl_mulai' => $tglMulaiStr,
+            'tgl_selesai' => $tglSelesaiStr,
+            'waktu_mulai' => $waktuMulaiStr,
+            'waktu_selesai' => $waktuSelesaiStr,
+            'mulai' => $peminjaman->mulai ?: ($tglMulaiStr . ' ' . $waktuMulaiStr),
+            'selesai' => $peminjaman->selesai ?: ($tglSelesaiStr . ' ' . $waktuSelesaiStr),
             'keperluan' => $peminjaman->keperluan,
-            'surat_peminjaman' => $peminjaman->surat_url,
+            'surat_url' => $peminjaman->surat_url ?? $peminjaman->surat_peminjaman,
+            'surat_peminjaman' => $peminjaman->surat_peminjaman ?? $peminjaman->surat_url,
             'status' => $peminjaman->status,
             'petugas' => $peminjaman->petugas,
             'jenis' => $jenisName,
             'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
-            'items' => $peminjaman->items->map(fn($it) => [
+            'ruangan' => $itemNames ?: 'Sarana Prasarana',
+            'items' => $itemList->map(fn($it) => [
                 'id' => $it->id,
-                'id_peminjaman' => $peminjaman->id,
+                'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
                 'item_id' => $it->item_id,
                 'jumlah' => $it->jumlah,
                 'item' => $it->item,
@@ -390,7 +408,7 @@ class SimpruController extends Controller
             'petugas' => 'nullable|string|max:100',
         ]);
 
-        $peminjaman = Peminjaman::find($id);
+        $peminjaman = Peminjaman::where('id', $id)->orWhere('id_peminjaman', $id)->first();
         if (!$peminjaman) {
             return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
         }

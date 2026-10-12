@@ -100,7 +100,7 @@ class PeminjamanController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'nip' => 'required|string|max:30',
+            'nip' => 'nullable|string|max:50',
             'nama_peminjam' => 'required|string|max:150',
             'unit_kerja' => 'required|string|max:150',
             'mulai' => 'required|date',
@@ -108,14 +108,19 @@ class PeminjamanController extends Controller
             'keperluan' => 'required|string',
             'surat_peminjaman_name' => 'nullable|string|max:255',
             'selected_items' => 'required|array|min:1',
-            'selected_items.*.item.id' => 'required|integer|exists:item_jenis,id',
-            'selected_items.*.jumlah' => 'required|integer|min:1',
+            'selected_items.*.item.id' => 'nullable|integer',
+            'selected_items.*.item_id' => 'nullable|integer',
+            'selected_items.*.jumlah' => 'nullable|integer',
+            'nomor_hp' => 'nullable|string|max:30',
+            'pihak_pemohon' => 'nullable|string|max:100',
         ]);
 
         $itemsPayload = array_map(function ($selected) {
+            $itemId = $selected['item']['id'] ?? $selected['item_id'] ?? null;
+            $jumlah = (int) ($selected['jumlah'] ?? 1);
             return [
-                'item_id' => $selected['item']['id'],
-                'jumlah' => (int) $selected['jumlah'],
+                'item_id' => (int) $itemId,
+                'jumlah' => max(1, $jumlah),
             ];
         }, $validated['selected_items']);
 
@@ -130,30 +135,44 @@ class PeminjamanController extends Controller
             ], 422);
         }
 
-        return DB::transaction(function () use ($validated, $itemsPayload) {
-            $prefix = 'PMJ-' . date('Ym') . '-';
-            $latest = Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
-                ->orderByDesc('id_peminjaman')
-                ->first();
+        return DB::transaction(function () use ($validated, $itemsPayload, $request) {
+            $now = Carbon::now();
+            $prefix = 'PMJ-' . $now->format('Ym') . '-';
 
-            if ($latest) {
-                $lastSeq = (int) substr($latest->id_peminjaman, -3);
-                $seq = str_pad((string)($lastSeq + 1), 3, '0', STR_PAD_LEFT);
-            } else {
-                $seq = '001';
-            }
-            $newId = $prefix . $seq;
+            $lastSeq = (int) (Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
+                ->orWhere('id', 'like', $prefix . '%')
+                ->lockForUpdate()
+                ->pluck('id_peminjaman')
+                ->map(fn ($id) => (int) substr($id, strlen($prefix)))
+                ->max() ?? 0);
+
+            do {
+                $lastSeq++;
+                $newId = $prefix . str_pad((string)$lastSeq, 3, '0', STR_PAD_LEFT);
+            } while (Peminjaman::where('id_peminjaman', $newId)->orWhere('id', $newId)->exists());
 
             $peminjaman = Peminjaman::create([
                 'id_peminjaman' => $newId,
-                'tgl_pengajuan' => now()->toDateString(),
-                'nip' => $validated['nip'],
+                'id' => $newId,
+                'tgl_pengajuan' => $now->toDateString(),
+                'nip' => $validated['nip'] ?? '-',
                 'nama_peminjam' => $validated['nama_peminjam'],
+                'nama_pemohon' => $validated['nama_peminjam'],
                 'unit_kerja' => $validated['unit_kerja'],
+                'unit_pemohon' => $validated['unit_kerja'],
+                'pihak_pemohon' => $request->input('pihak_pemohon', 'Internal Kemenag Sleman'),
+                'nomor_hp' => $request->input('nomor_hp', '-'),
+                'penanggung_jawab' => $request->input('penanggung_jawab', $validated['nama_peminjam']),
+                'jumlah_peserta' => (int) $request->input('jumlah_peserta', 1),
                 'mulai' => $validated['mulai'],
                 'selesai' => $validated['selesai'],
+                'tgl_mulai' => substr($validated['mulai'], 0, 10),
+                'tgl_selesai' => substr($validated['selesai'], 0, 10),
+                'waktu_mulai' => strlen($validated['mulai']) >= 16 ? substr($validated['mulai'], 11, 5) : '08:00',
+                'waktu_selesai' => strlen($validated['selesai']) >= 16 ? substr($validated['selesai'], 11, 5) : '16:00',
                 'keperluan' => $validated['keperluan'],
                 'surat_peminjaman' => $validated['surat_peminjaman_name'] ?? 'surat_permohonan.pdf',
+                'surat_url' => $validated['surat_peminjaman_name'] ?? 'surat_permohonan.pdf',
                 'status' => 'Menunggu Persetujuan',
                 'petugas' => null,
             ]);
