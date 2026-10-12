@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Copy, Check, Search, ArrowRight } from 'lucide-react';
 
+import { copyTextToClipboard } from '../../utils/clipboard';
+
 interface SuccessModalProps {
   idPeminjaman: string;
   onTrack: (id: string) => void;
@@ -10,10 +12,12 @@ interface SuccessModalProps {
 export const SuccessModal: React.FC<SuccessModalProps> = ({ idPeminjaman, onTrack, onClose }) => {
   const [copied, setCopied] = useState<boolean>(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(idPeminjaman);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyTextToClipboard(idPeminjaman);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (

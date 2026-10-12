@@ -1,6 +1,6 @@
 import React from 'react';
 import { STATUS_PEMINJAMAN } from '../../constants';
-import { CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, Ban } from 'lucide-react';
 
 interface TimelineStatusProps {
   status: string;
@@ -8,8 +8,10 @@ interface TimelineStatusProps {
 
 export const TimelineStatus: React.FC<TimelineStatusProps> = ({ status }) => {
   const isRejected = status === STATUS_PEMINJAMAN.DITOLAK;
-  const isApproved = status === STATUS_PEMINJAMAN.DISETUJUI || status === STATUS_PEMINJAMAN.SELESAI;
-  const isFinished = status === STATUS_PEMINJAMAN.SELESAI;
+  const isCancelled = status === STATUS_PEMINJAMAN.DIBATALKAN;
+  const isApproved = status === STATUS_PEMINJAMAN.DISETUJUI;
+  // Ditolak & dibatalkan sama-sama mengakhiri alur, tapi maknanya berbeda.
+  const isClosed = isRejected || isCancelled;
 
   return (
     <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-200/80 mb-6">
@@ -28,7 +30,7 @@ export const TimelineStatus: React.FC<TimelineStatusProps> = ({ status }) => {
         <div className="flex flex-col items-center">
           <div
             className={`w-7 h-7 rounded-full flex items-center justify-center mb-1.5 shadow-xs ${
-              isApproved || isRejected
+              isApproved || isClosed
                 ? 'bg-emerald-600 text-white'
                 : 'bg-amber-500 text-white animate-pulse'
             }`}
@@ -44,18 +46,32 @@ export const TimelineStatus: React.FC<TimelineStatusProps> = ({ status }) => {
             className={`w-7 h-7 rounded-full flex items-center justify-center mb-1.5 shadow-xs ${
               isRejected
                 ? 'bg-rose-600 text-white'
+                : isCancelled
+                ? 'bg-slate-500 text-white'
                 : isApproved
                 ? 'bg-emerald-600 text-white'
                 : 'bg-slate-200 text-slate-400'
             }`}
           >
-            {isRejected ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            {isRejected ? (
+              <XCircle className="w-4 h-4" />
+            ) : isCancelled ? (
+              <Ban className="w-4 h-4" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
           </div>
           <span className="text-[11px] font-bold text-slate-800">
-            {isRejected ? '3. Ditolak' : isFinished ? '3. Selesai' : '3. Persetujuan'}
+            {isRejected ? '3. Ditolak' : isCancelled ? '3. Dibatalkan' : '3. Persetujuan'}
           </span>
           <span className="text-[10px] text-slate-500">
-            {isRejected ? 'Tidak memenuhi syarat' : isApproved ? 'Izin diterbitkan' : 'Menunggu hasil'}
+            {isRejected
+              ? 'Tidak memenuhi syarat'
+              : isCancelled
+              ? 'Dibatalkan'
+              : isApproved
+              ? 'Izin diterbitkan'
+              : 'Menunggu hasil'}
           </span>
         </div>
       </div>

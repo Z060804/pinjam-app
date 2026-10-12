@@ -10,7 +10,7 @@ interface CalendarContainerProps {
 }
 
 export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) => {
-  // Mockup matches October 2026
+  // Default to October 2026 matching current active period
   const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 9, 1));
   const [viewMode, setViewMode] = useState<'calendar' | 'agenda'>('calendar');
   const [selectedEvent, setSelectedEvent] = useState<MasterPeminjaman | null>(null);
@@ -29,17 +29,28 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date(2026, 9, 8)); // Active October 2026
+    setCurrentDate(new Date(2026, 9, 1));
   };
+
+  // Filter events active within this month for the agenda view
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+  const currentMonthEvents = events.filter((ev) => {
+    const start = (ev.tgl_mulai || ev.mulai || '').substring(0, 7);
+    const end = (ev.tgl_selesai || ev.selesai || start).substring(0, 7);
+    return monthPrefix >= start && monthPrefix <= end;
+  });
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={handleToday}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors"
           >
             Today
           </button>
@@ -47,7 +58,7 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-1.5 hover:bg-slate-50 text-slate-600 cursor-pointer border-r border-slate-200"
+              className="p-1.5 hover:bg-slate-50 text-slate-600 cursor-pointer border-r border-slate-200 transition-colors"
               aria-label="Bulan sebelumnya"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -55,7 +66,7 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-1.5 hover:bg-slate-50 text-slate-600 cursor-pointer"
+              className="p-1.5 hover:bg-slate-50 text-slate-600 cursor-pointer transition-colors"
               aria-label="Bulan berikutnya"
             >
               <ChevronRight className="w-4 h-4" />
@@ -66,11 +77,11 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
           </h3>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
           <button
             type="button"
             onClick={() => setViewMode('calendar')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
               viewMode === 'calendar' ? 'bg-[#009966] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -80,7 +91,7 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
           <button
             type="button"
             onClick={() => setViewMode('agenda')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
               viewMode === 'agenda' ? 'bg-[#009966] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -97,7 +108,10 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
           onSelectEvent={setSelectedEvent}
         />
       ) : (
-        <AgendaListView events={events} onSelectEvent={setSelectedEvent} />
+        <AgendaListView
+          events={currentMonthEvents.length > 0 ? currentMonthEvents : events}
+          onSelectEvent={setSelectedEvent}
+        />
       )}
 
       <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />

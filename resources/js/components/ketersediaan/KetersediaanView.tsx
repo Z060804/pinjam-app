@@ -35,7 +35,7 @@ export const KetersediaanView: React.FC<KetersediaanViewProps> = ({
         const [resJenis, resItems, resPeminjaman] = await Promise.all([
           axios.get('/api/master/jenis'),
           axios.get('/api/item/jenis'),
-          axios.get('/api/master/peminjaman'),
+          axios.get('/api/peminjaman'),
         ]);
         setCategories(resJenis.data?.data || []);
         setItems(resItems.data?.data || []);

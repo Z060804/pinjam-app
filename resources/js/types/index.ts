@@ -10,22 +10,36 @@ export interface ItemJenis {
   is_active: boolean;
   registration_id: string | null;
   quantity: number;
+  kapasitas?: number | null;
+  fasilitas?: string | null;
   image_url: string | null;
   keterangan: string | null;
 }
 
 export interface MasterPeminjaman {
+  id?: string;
   id_peminjaman: string;
   tgl_pengajuan: string;
-  nip: string;
+  nip?: string;
   nama_peminjam: string;
+  nama_pemohon?: string;
   unit_kerja: string;
+  unit_pemohon?: string;
+  tgl_mulai?: string;
+  tgl_selesai?: string;
+  waktu_mulai?: string;
+  waktu_selesai?: string;
   mulai: string;
   selesai: string;
   keperluan: string;
+  kegiatan?: string;
   surat_peminjaman: string | null;
+  surat_url?: string | null;
   status: string;
   petugas: string | null;
+  item_dipinjam?: string;
+  ruangan?: string;
+  jenis?: 'ruangan' | 'kendaraan' | 'perlengkapan' | string;
 }
 
 export interface ItemPeminjaman {
@@ -44,6 +58,7 @@ export interface FormPeminjamanState {
   nip: string;
   nama_peminjam: string;
   unit_kerja: string;
+  nomor_hp?: string;
   mulai: string;
   selesai: string;
   keperluan: string;

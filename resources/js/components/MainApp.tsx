@@ -55,7 +55,7 @@ export const MainApp: React.FC = () => {
         )}
       </main>
 
-      <Footer />
+      <Footer onNavigate={setActiveTab} />
     </div>
   );
 };

@@ -1,17 +1,19 @@
 import React from 'react';
-import { User, CreditCard, Building } from 'lucide-react';
+import { User, CreditCard, Building, Phone } from 'lucide-react';
 
 interface StepDataPeminjamProps {
   nip: string;
   namaPeminjam: string;
   unitKerja: string;
-  onChangeField: (field: 'nip' | 'nama_peminjam' | 'unit_kerja', value: string) => void;
+  nomorHp?: string;
+  onChangeField: (field: 'nip' | 'nama_peminjam' | 'unit_kerja' | 'nomor_hp', value: string) => void;
 }
 
 export const StepDataPeminjam: React.FC<StepDataPeminjamProps> = ({
   nip,
   namaPeminjam,
   unitKerja,
+  nomorHp = '',
   onChangeField,
 }) => {
   return (
@@ -19,7 +21,7 @@ export const StepDataPeminjam: React.FC<StepDataPeminjamProps> = ({
       <div>
         <h3 className="text-base font-bold text-slate-900">2. Identitas Pemohon Peminjaman</h3>
         <p className="text-xs text-slate-500">
-          Masukkan NIP resmi, nama lengkap berserta gelar, dan unit kerja di Kemenag Sleman.
+          Masukkan NIP resmi, nama lengkap berserta gelar, unit kerja, dan nomor kontak aktif.
         </p>
       </div>
 
@@ -70,6 +72,22 @@ export const StepDataPeminjam: React.FC<StepDataPeminjamProps> = ({
               value={unitKerja}
               onChange={(e) => onChangeField('unit_kerja', e.target.value)}
               placeholder="Contoh: Seksi Pendidikan Madrasah (Penma)"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-[#009966] focus:ring-1 focus:ring-[#009966]"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Nomor WhatsApp / HP Aktif
+          </label>
+          <div className="relative">
+            <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={nomorHp}
+              onChange={(e) => onChangeField('nomor_hp', e.target.value)}
+              placeholder="Contoh: 081234567890"
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-[#009966] focus:ring-1 focus:ring-[#009966]"
             />
           </div>

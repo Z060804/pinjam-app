@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../services/api';
-import { ItemJenis, CartItem, MasterJenis, FormPeminjamanState } from '../../types';
+import { ItemJenis, MasterJenis, FormPeminjamanState } from '../../types';
 import { StepIndicator } from './StepIndicator';
 import { StepPilihItem } from './StepPilihItem';
 import { StepDataPeminjam } from './StepDataPeminjam';
@@ -31,6 +31,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     nip: '',
     nama_peminjam: '',
     unit_kerja: '',
+    nomor_hp: '',
     mulai: '2026-10-15T08:00',
     selesai: '2026-10-15T15:00',
     keperluan: '',
@@ -145,6 +146,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 nip={form.nip}
                 namaPeminjam={form.nama_peminjam}
                 unitKerja={form.unit_kerja}
+                nomorHp={form.nomor_hp}
                 onChangeField={(f, v) => handleFieldChange(f, v)}
               />
             )}

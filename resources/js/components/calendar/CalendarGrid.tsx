@@ -8,6 +8,14 @@ interface CalendarGridProps {
   onSelectEvent: (event: MasterPeminjaman) => void;
 }
 
+function toYMD(year: number, month: number, day: number): string {
+  const d = new Date(year, month, day);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dayStr}`;
+}
+
 export const CalendarGrid: React.FC<CalendarGridProps> = ({
   currentDate,
   events,
@@ -24,33 +32,44 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
   const today = new Date();
   const isThisMonth = today.getFullYear() === year && today.getMonth() === month;
 
-  // Generate cells (previous month trailing days, current month days, next month leading days)
+  // Generate cells (trailing prev month, current month, leading next month)
   const cells: Array<{ dayNumber: number; isCurrentMonth: boolean; dateString: string; isToday: boolean }> = [];
 
+  // Trailing previous month days
   for (let i = firstDayOfMonth - 1; i >= 0; i--) {
     const day = daysInPrevMonth - i;
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateStr = toYMD(year, month - 1, day);
     cells.push({ dayNumber: day, isCurrentMonth: false, dateString: dateStr, isToday: false });
   }
 
+  // Current month days
   for (let day = 1; day <= daysInCurrentMonth; day++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateStr = toYMD(year, month, day);
     const isToday = isThisMonth && today.getDate() === day;
     cells.push({ dayNumber: day, isCurrentMonth: true, dateString: dateStr, isToday });
   }
 
-  const remaining = 42 - cells.length;
+  // Leading next month days to complete 35 or 42 grid cells
+  const targetTotal = cells.length > 35 ? 42 : 35;
+  const remaining = targetTotal - cells.length;
   for (let day = 1; day <= remaining; day++) {
-    const dateStr = `${year}-${String(month + 2).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateStr = toYMD(year, month + 1, day);
     cells.push({ dayNumber: day, isCurrentMonth: false, dateString: dateStr, isToday: false });
   }
 
-  const getEventsForDate = (datePrefix: string): MasterPeminjaman[] => {
-    return events.filter((ev) => ev.mulai.startsWith(datePrefix));
+  // Robust date-range check for each cell:
+  // An event matches a cell if cellDate is between its start date and end date!
+  const getEventsForDate = (cellDateStr: string): MasterPeminjaman[] => {
+    return events.filter((ev) => {
+      const start = (ev.tgl_mulai || ev.mulai || '').substring(0, 10);
+      const end = (ev.tgl_selesai || ev.selesai || start).substring(0, 10);
+      if (!start) return false;
+      return cellDateStr >= start && cellDateStr <= end;
+    });
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
       <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center">
         {dayLabels.map((lbl) => (
           <div key={lbl} className="py-2.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
@@ -65,6 +84,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
             dayNumber={cell.dayNumber}
             isCurrentMonth={cell.isCurrentMonth}
             isToday={cell.isToday}
+            dateString={cell.dateString}
             events={getEventsForDate(cell.dateString)}
             onSelectEvent={onSelectEvent}
           />

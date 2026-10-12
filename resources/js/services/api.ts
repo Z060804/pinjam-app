@@ -1,4 +1,4 @@
-import axios, { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios from 'axios';
 import {
   MasterJenis,
   ItemJenis,
@@ -13,14 +13,23 @@ import {
   INITIAL_MASTER_PEMINJAMAN,
   INITIAL_ITEM_PEMINJAMAN,
 } from './mockData';
-import { API_SIMULATED_DELAY_MS, STATUS_PEMINJAMAN } from '../constants';
+import { STATUS_PEMINJAMAN } from '../constants';
 
 const STORAGE_KEYS = {
-  MASTER_JENIS: 'simpru_master_jenis',
-  ITEM_JENIS: 'simpru_item_jenis',
-  MASTER_PEMINJAMAN: 'simpru_master_peminjaman',
-  ITEM_PEMINJAMAN: 'simpru_item_peminjaman',
+  MASTER_JENIS: 'simpru_master_jenis_v2',
+  ITEM_JENIS: 'simpru_item_jenis_v2',
+  MASTER_PEMINJAMAN: 'simpru_master_peminjaman_v2',
+  ITEM_PEMINJAMAN: 'simpru_item_peminjaman_v2',
 };
+
+// Clean out old conflicting localStorage keys from previous dummy sessions
+try {
+  localStorage.removeItem('simpru_master_peminjaman');
+  localStorage.removeItem('simpru_item_peminjaman');
+  localStorage.removeItem('simpru_admin_permohonan');
+} catch (e) {
+  // Ignore
+}
 
 function getStored<T>(key: string, fallback: T): T {
   try {
@@ -39,159 +48,140 @@ function setStored<T>(key: string, value: T): void {
   }
 }
 
-// Initializing store
+// Initializing in-memory fallback stores
 let masterJenisList: MasterJenis[] = getStored(STORAGE_KEYS.MASTER_JENIS, INITIAL_MASTER_JENIS);
 let itemJenisList: ItemJenis[] = getStored(STORAGE_KEYS.ITEM_JENIS, INITIAL_ITEM_JENIS);
 let masterPeminjamanList: MasterPeminjaman[] = getStored(STORAGE_KEYS.MASTER_PEMINJAMAN, INITIAL_MASTER_PEMINJAMAN);
 let itemPeminjamanList: ItemPeminjaman[] = getStored(STORAGE_KEYS.ITEM_PEMINJAMAN, INITIAL_ITEM_PEMINJAMAN);
 
-// Custom Axios Adapter for simulated endpoints
-axios.defaults.adapter = async (config: InternalAxiosRequestConfig): Promise<AxiosResponse> => {
-  await new Promise((resolve) => setTimeout(resolve, API_SIMULATED_DELAY_MS));
-  const url = config.url ?? '';
-  const method = (config.method ?? 'get').toLowerCase();
+// Setup Axios client with baseURL
+const apiClient = axios.create({
+  headers: {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+  },
+});
 
-  // GET /api/master/jenis
-  if (method === 'get' && url === '/api/master/jenis') {
-    return {
-      data: { success: true, data: masterJenisList },
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      config,
-    };
-  }
+// Configure Axios with real backend priority and local synchronization fallback
+apiClient.interceptors.response.use(
+  (response) => {
+    // Sync backend responses to local storage for seamless offline persistence
+    if (response.config.url === '/api/master/jenis' && response.data?.data) {
+      masterJenisList = response.data.data;
+      setStored(STORAGE_KEYS.MASTER_JENIS, masterJenisList);
+    } else if (response.config.url?.startsWith('/api/item/jenis') && response.data?.data) {
+      if (!response.config.params?.id_jenis) {
+        itemJenisList = response.data.data;
+        setStored(STORAGE_KEYS.ITEM_JENIS, itemJenisList);
+      }
+    } else if ((response.config.url === '/api/peminjaman' || response.config.url === '/api/master/peminjaman') && response.data?.data) {
+      masterPeminjamanList = response.data.data;
+      setStored(STORAGE_KEYS.MASTER_PEMINJAMAN, masterPeminjamanList);
+    }
+    return response;
+  },
+  async (error) => {
+    // If backend network error, use fallback local response
+    const config = error.config;
+    if (!config) return Promise.reject(error);
 
-  // GET /api/item/jenis
-  if (method === 'get' && url.startsWith('/api/item/jenis')) {
-    const params = config.params || {};
-    const idJenis = params.id_jenis ? Number(params.id_jenis) : null;
-    const filtered = idJenis ? itemJenisList.filter((it) => it.id_jenis === idJenis) : itemJenisList;
-    return {
-      data: { success: true, data: filtered },
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      config,
-    };
-  }
+    const url = config.url ?? '';
+    const method = (config.method ?? 'get').toLowerCase();
 
-  // GET /api/master/peminjaman
-  if (method === 'get' && url === '/api/master/peminjaman') {
-    return {
-      data: { success: true, data: [...masterPeminjamanList] },
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      config,
-    };
-  }
+    // GET /api/master/jenis
+    if (method === 'get' && url === '/api/master/jenis') {
+      return { data: { success: true, data: masterJenisList }, status: 200, statusText: 'OK', headers: {}, config };
+    }
 
-  // GET /api/item/peminjaman
-  if (method === 'get' && url === '/api/item/peminjaman') {
-    return {
-      data: { success: true, data: [...itemPeminjamanList] },
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      config,
-    };
-  }
+    // GET /api/item/jenis
+    if (method === 'get' && url.startsWith('/api/item/jenis')) {
+      const params = config.params || {};
+      const idJenis = params.id_jenis ? Number(params.id_jenis) : null;
+      const filtered = idJenis ? itemJenisList.filter((it) => it.id_jenis === idJenis) : itemJenisList;
+      return { data: { success: true, data: filtered }, status: 200, statusText: 'OK', headers: {}, config };
+    }
 
-  // GET /api/peminjaman/:id
-  if (method === 'get' && url.startsWith('/api/peminjaman/')) {
-    const id = url.replace('/api/peminjaman/', '').trim();
-    const peminjaman = masterPeminjamanList.find((p) => p.id_peminjaman.toLowerCase() === id.toLowerCase());
-    if (!peminjaman) {
+    // GET /api/peminjaman or GET /api/master/peminjaman
+    if (method === 'get' && (url === '/api/peminjaman' || url === '/api/master/peminjaman')) {
+      return { data: { success: true, data: masterPeminjamanList }, status: 200, statusText: 'OK', headers: {}, config };
+    }
+
+    // GET /api/peminjaman/:id
+    if (method === 'get' && url.startsWith('/api/peminjaman/')) {
+      const id = url.replace('/api/peminjaman/', '').trim();
+      const peminjaman = masterPeminjamanList.find((p) => p.id_peminjaman.toLowerCase() === id.toLowerCase());
+      if (peminjaman) {
+        const relatedItems = itemPeminjamanList
+          .filter((ip) => ip.id_peminjaman === peminjaman.id_peminjaman)
+          .map((ip) => ({
+            ...ip,
+            item: itemJenisList.find((ij) => ij.id === ip.item_id),
+          }));
+
+        const result: PeminjamanFull = {
+          ...peminjaman,
+          items: relatedItems,
+        };
+        return { data: { success: true, data: result }, status: 200, statusText: 'OK', headers: {}, config };
+      }
+    }
+
+    // POST /api/peminjaman
+    if (method === 'post' && url === '/api/peminjaman') {
+      const body: FormPeminjamanState = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const now = new Date();
+      const seq = String(masterPeminjamanList.length + 1).padStart(3, '0');
+      const newId = `PMJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${seq}`;
+
+      const newMaster: MasterPeminjaman = {
+        id_peminjaman: newId,
+        tgl_pengajuan: now.toISOString().split('T')[0],
+        nip: body.nip,
+        nama_peminjam: body.nama_peminjam,
+        unit_kerja: body.unit_kerja,
+        mulai: body.mulai,
+        selesai: body.selesai,
+        keperluan: body.keperluan,
+        surat_peminjaman: body.surat_peminjaman_name || 'surat_permohonan.pdf',
+        status: STATUS_PEMINJAMAN.MENUNGGU,
+        petugas: null,
+      };
+
+      const newItems: ItemPeminjaman[] = (body.selected_items || []).map((cart, idx) => ({
+        id: itemPeminjamanList.length + idx + 1,
+        id_peminjaman: newId,
+        item_id: cart.item.id,
+        jumlah: cart.jumlah,
+      }));
+
+      masterPeminjamanList = [newMaster, ...masterPeminjamanList];
+      itemPeminjamanList = [...itemPeminjamanList, ...newItems];
+
+      setStored(STORAGE_KEYS.MASTER_PEMINJAMAN, masterPeminjamanList);
+      setStored(STORAGE_KEYS.ITEM_PEMINJAMAN, itemPeminjamanList);
+
       return {
-        data: { success: false, message: 'Peminjaman tidak ditemukan' },
-        status: 404,
-        statusText: 'Not Found',
+        data: {
+          success: true,
+          message: 'Pengajuan peminjaman berhasil disimpan',
+          data: {
+            ...newMaster,
+            items: newItems.map((ni) => ({
+              ...ni,
+              item: itemJenisList.find((ij) => ij.id === ni.item_id),
+            })),
+          },
+        },
+        status: 201,
+        statusText: 'Created',
         headers: {},
         config,
       };
     }
-    const relatedItems = itemPeminjamanList
-      .filter((ip) => ip.id_peminjaman === peminjaman.id_peminjaman)
-      .map((ip) => ({
-        ...ip,
-        item: itemJenisList.find((ij) => ij.id === ip.item_id),
-      }));
 
-    const result: PeminjamanFull = {
-      ...peminjaman,
-      items: relatedItems,
-    };
-
-    return {
-      data: { success: true, data: result },
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      config,
-    };
+    return Promise.reject(error);
   }
+);
 
-  // POST /api/peminjaman
-  if (method === 'post' && url === '/api/peminjaman') {
-    const body: FormPeminjamanState = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-    const now = new Date();
-    const seq = String(masterPeminjamanList.length + 1).padStart(3, '0');
-    const newId = `PMJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${seq}`;
-
-    const newMaster: MasterPeminjaman = {
-      id_peminjaman: newId,
-      tgl_pengajuan: now.toISOString().split('T')[0],
-      nip: body.nip,
-      nama_peminjam: body.nama_peminjam,
-      unit_kerja: body.unit_kerja,
-      mulai: body.mulai,
-      selesai: body.selesai,
-      keperluan: body.keperluan,
-      surat_peminjaman: body.surat_peminjaman_name || 'surat_permohonan.pdf',
-      status: STATUS_PEMINJAMAN.MENUNGGU,
-      petugas: null,
-    };
-
-    const newItems: ItemPeminjaman[] = body.selected_items.map((cart, idx) => ({
-      id: itemPeminjamanList.length + idx + 1,
-      id_peminjaman: newId,
-      item_id: cart.item.id,
-      jumlah: cart.jumlah,
-    }));
-
-    masterPeminjamanList = [newMaster, ...masterPeminjamanList];
-    itemPeminjamanList = [...itemPeminjamanList, ...newItems];
-
-    setStored(STORAGE_KEYS.MASTER_PEMINJAMAN, masterPeminjamanList);
-    setStored(STORAGE_KEYS.ITEM_PEMINJAMAN, itemPeminjamanList);
-
-    return {
-      data: {
-        success: true,
-        message: 'Pengajuan peminjaman berhasil dikirim',
-        data: {
-          ...newMaster,
-          items: newItems.map((ni) => ({
-            ...ni,
-            item: itemJenisList.find((ij) => ij.id === ni.item_id),
-          })),
-        },
-      },
-      status: 201,
-      statusText: 'Created',
-      headers: {},
-      config,
-    };
-  }
-
-  return {
-    data: { success: false, message: 'Endpoint not simulated' },
-    status: 404,
-    statusText: 'Not Found',
-    headers: {},
-    config,
-  };
-};
-
-export default axios;
+export default apiClient;

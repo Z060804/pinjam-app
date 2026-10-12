@@ -1,10 +1,7 @@
 import { MasterJenis, ItemJenis, MasterPeminjaman, ItemPeminjaman } from '../types';
+import { CATEGORIES } from '../constants';
 
-export const INITIAL_MASTER_JENIS: MasterJenis[] = [
-  { id: 1, nama: 'Ruangan' },
-  { id: 2, nama: 'Kendaraan' },
-  { id: 3, nama: 'Alat' },
-];
+export const INITIAL_MASTER_JENIS: MasterJenis[] = CATEGORIES.map((c) => ({ id: c.id, nama: c.name }));
 
 export const INITIAL_ITEM_JENIS: ItemJenis[] = [
   {
