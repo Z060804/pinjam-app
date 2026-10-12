@@ -3,6 +3,8 @@ import { MasterPeminjaman } from '../../types';
 import { X, Calendar, Clock, User, Building, ShieldCheck, FileText } from 'lucide-react';
 import { BadgeStatus } from '../common/BadgeStatus';
 
+import { formatTimeRangeDisplay, formatDateDisplay } from '../../utils/date';
+
 interface EventDetailModalProps {
   event: MasterPeminjaman | null;
   onClose: () => void;
@@ -50,7 +52,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onClo
             <div>
               <p className="text-xs text-slate-500">Waktu Pelaksanaan</p>
               <p className="font-medium text-slate-800">
-                {event.mulai} s/d {event.selesai}
+                {formatTimeRangeDisplay(event.mulai, event.selesai)}
               </p>
             </div>
           </div>
@@ -58,7 +60,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onClo
           <div className="flex items-center gap-3 text-slate-700">
             <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
             <span className="text-xs text-slate-500">
-              Tanggal Pengajuan: <strong className="text-slate-700">{event.tgl_pengajuan}</strong>
+              Tanggal Pengajuan: <strong className="text-slate-700">{formatDateDisplay(event.tgl_pengajuan)}</strong>
             </span>
           </div>
 

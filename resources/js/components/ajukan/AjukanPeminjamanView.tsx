@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../services/api';
-import { ItemJenis, CartItem, MasterJenis, FormPeminjamanState } from '../../types';
+import { ItemJenis, MasterJenis, FormPeminjamanState } from '../../types';
 import { StepIndicator } from './StepIndicator';
 import { StepPilihItem } from './StepPilihItem';
 import { StepDataPeminjam } from './StepDataPeminjam';
@@ -8,7 +8,7 @@ import { StepWaktuDanKeperluan } from './StepWaktuDanKeperluan';
 import { StepUnggahSurat } from './StepUnggahSurat';
 import { RingkasanSidebar } from './RingkasanSidebar';
 import { SuccessModal } from './SuccessModal';
-import { ArrowLeft, ArrowRight, Send } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Send, AlertTriangle } from 'lucide-react';
 
 interface AjukanPeminjamanViewProps {
   preSelectedItem: ItemJenis | null;
@@ -26,6 +26,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   const [categories, setCategories] = useState<MasterJenis[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormPeminjamanState>({
     nip: '',
@@ -64,27 +65,28 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   }, [preSelectedItem]);
 
   const handleToggleItem = (item: ItemJenis, jumlah: number) => {
+    setErrorMessage(null);
     setForm((prev) => {
       const exists = prev.selected_items.find((c) => c.item.id === item.id);
       if (exists) {
-        return {
-          ...prev,
-          selected_items: prev.selected_items.filter((c) => c.item.id !== item.id),
-        };
+        return { ...prev, selected_items: prev.selected_items.filter((c) => c.item.id !== item.id) };
       }
       return { ...prev, selected_items: [...prev.selected_items, { item, jumlah }] };
     });
   };
 
   const handleUpdateQty = (itemId: number, delta: number) => {
+    setErrorMessage(null);
     setForm((prev) => ({
       ...prev,
-      selected_items: prev.selected_items
-        .map((c) => (c.item.id === itemId ? { ...c, jumlah: Math.max(1, c.jumlah + delta) } : c)),
+      selected_items: prev.selected_items.map((c) =>
+        c.item.id === itemId ? { ...c, jumlah: Math.max(1, c.jumlah + delta) } : c
+      ),
     }));
   };
 
   const handleRemoveItem = (itemId: number) => {
+    setErrorMessage(null);
     setForm((prev) => ({
       ...prev,
       selected_items: prev.selected_items.filter((c) => c.item.id !== itemId),
@@ -92,27 +94,37 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   };
 
   const handleFieldChange = (field: keyof FormPeminjamanState, val: string) => {
+    setErrorMessage(null);
     setForm((prev) => ({ ...prev, [field]: val }));
   };
 
   const canProceed = (): boolean => {
     if (step === 1) return form.selected_items.length > 0;
     if (step === 2) return Boolean(form.nip.trim() && form.nama_peminjam.trim() && form.unit_kerja.trim());
-    if (step === 3) return Boolean(form.mulai && form.selesai && form.keperluan.trim());
+    if (step === 3) {
+      return Boolean(form.mulai && form.selesai && form.keperluan.trim() && new Date(form.selesai) > new Date(form.mulai));
+    }
     return true;
+  };
+
+  const normalizeDate = (dt: string): string => {
+    return dt.includes('T') ? dt.replace('T', ' ') + (dt.length === 16 ? ':00' : '') : dt;
   };
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       const response = await axios.post('/api/peminjaman', {
         ...form,
-        mulai: form.mulai.replace('T', ' ') + ':00',
-        selesai: form.selesai.replace('T', ' ') + ':00',
+        mulai: normalizeDate(form.mulai),
+        selesai: normalizeDate(form.selesai),
       });
       setCreatedId(response.data?.data?.id_peminjaman || 'PMJ-SUCCESS');
-    } catch (err) {
-      console.error('Error submitting peminjaman:', err);
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = errorObj.response?.data?.message || errorObj.message || 'Gagal mengirim pengajuan peminjaman';
+      setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -157,14 +169,22 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
               />
             )}
             {step === 4 && (
-              <StepUnggahSurat
-                suratName={form.surat_peminjaman_name}
-                onFileChange={(fn) => handleFieldChange('surat_peminjaman_name', fn)}
-                nip={form.nip}
-                namaPeminjam={form.nama_peminjam}
-                mulai={form.mulai}
-                selesai={form.selesai}
-              />
+              <div className="space-y-4">
+                <StepUnggahSurat
+                  suratName={form.surat_peminjaman_name}
+                  onFileChange={(fn) => handleFieldChange('surat_peminjaman_name', fn)}
+                  nip={form.nip}
+                  namaPeminjam={form.nama_peminjam}
+                  mulai={form.mulai}
+                  selesai={form.selesai}
+                />
+                {errorMessage && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed font-medium">{errorMessage}</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -172,7 +192,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
             <button
               type="button"
               disabled={step === 1}
-              onClick={() => setStep((s) => Math.max(1, s - 1))}
+              onClick={() => { setErrorMessage(null); setStep((s) => Math.max(1, s - 1)); }}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
                 step === 1 ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-700 bg-slate-100 hover:bg-slate-200'
               }`}
@@ -185,11 +205,9 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
               <button
                 type="button"
                 disabled={!canProceed()}
-                onClick={() => setStep((s) => s + 1)}
+                onClick={() => { setErrorMessage(null); setStep((s) => s + 1); }}
                 className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-xs transition-all ${
-                  canProceed()
-                    ? 'bg-[#009966] hover:bg-[#008055]'
-                    : 'bg-slate-300 cursor-not-allowed opacity-60'
+                  canProceed() ? 'bg-[#009966] hover:bg-[#008055]' : 'bg-slate-300 cursor-not-allowed opacity-60'
                 }`}
               >
                 Lanjut

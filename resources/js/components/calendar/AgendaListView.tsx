@@ -2,6 +2,7 @@ import React from 'react';
 import { MasterPeminjaman } from '../../types';
 import { Clock, Calendar as CalIcon } from 'lucide-react';
 import { BadgeStatus } from '../common/BadgeStatus';
+import { formatTimeRangeDisplay } from '../../utils/date';
 
 interface AgendaListViewProps {
   events: MasterPeminjaman[];
@@ -38,9 +39,7 @@ export const AgendaListView: React.FC<AgendaListViewProps> = ({ events, onSelect
           </div>
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200/60 shrink-0">
             <Clock className="w-3.5 h-3.5 text-emerald-600" />
-            <span>
-              {ev.mulai} s/d {ev.selesai.split(' ')[1] || ev.selesai}
-            </span>
+            <span>{formatTimeRangeDisplay(ev.mulai, ev.selesai)}</span>
           </div>
         </div>
       ))}

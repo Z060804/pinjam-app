@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class ItemJenis extends Model
+{
+    use HasFactory;
+
+    protected $table = 'item_jenis';
+
+    protected $fillable = [
+        'id_jenis',
+        'nama',
+        'is_active',
+        'registration_id',
+        'quantity',
+        'image_url',
+        'keterangan',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+        'quantity' => 'integer',
+    ];
+
+    public function jenis(): BelongsTo
+    {
+        return $this->belongsTo(MasterJenis::class, 'id_jenis');
+    }
+
+    public function itemPeminjaman(): HasMany
+    {
+        return $this->hasMany(ItemPeminjaman::class, 'item_id');
+    }
+}

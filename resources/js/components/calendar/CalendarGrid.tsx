@@ -1,6 +1,7 @@
 import React from 'react';
 import { MasterPeminjaman } from '../../types';
 import { CalendarCell } from './CalendarCell';
+import { extractDateParts } from '../../utils/date';
 
 interface CalendarGridProps {
   currentDate: Date;
@@ -24,29 +25,38 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
   const today = new Date();
   const isThisMonth = today.getFullYear() === year && today.getMonth() === month;
 
-  // Generate cells (previous month trailing days, current month days, next month leading days)
+  const formatDateStr = (y: number, m: number, d: number): string => {
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  };
+
   const cells: Array<{ dayNumber: number; isCurrentMonth: boolean; dateString: string; isToday: boolean }> = [];
 
+  // Trailing days from previous month
   for (let i = firstDayOfMonth - 1; i >= 0; i--) {
     const day = daysInPrevMonth - i;
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const prevDate = new Date(year, month - 1, day);
+    const dateStr = formatDateStr(prevDate.getFullYear(), prevDate.getMonth(), day);
     cells.push({ dayNumber: day, isCurrentMonth: false, dateString: dateStr, isToday: false });
   }
 
+  // Days in current month
   for (let day = 1; day <= daysInCurrentMonth; day++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateStr = formatDateStr(year, month, day);
     const isToday = isThisMonth && today.getDate() === day;
     cells.push({ dayNumber: day, isCurrentMonth: true, dateString: dateStr, isToday });
   }
 
-  const remaining = 42 - cells.length;
+  // Leading days for next month to complete 35 or 42 grid cells
+  const totalSlots = cells.length > 35 ? 42 : 35;
+  const remaining = totalSlots - cells.length;
   for (let day = 1; day <= remaining; day++) {
-    const dateStr = `${year}-${String(month + 2).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const nextDate = new Date(year, month + 1, day);
+    const dateStr = formatDateStr(nextDate.getFullYear(), nextDate.getMonth(), day);
     cells.push({ dayNumber: day, isCurrentMonth: false, dateString: dateStr, isToday: false });
   }
 
   const getEventsForDate = (datePrefix: string): MasterPeminjaman[] => {
-    return events.filter((ev) => ev.mulai.startsWith(datePrefix));
+    return events.filter((ev) => extractDateParts(ev.mulai).date === datePrefix);
   };
 
   return (

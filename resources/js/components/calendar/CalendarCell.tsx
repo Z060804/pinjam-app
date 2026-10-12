@@ -1,5 +1,6 @@
 import React from 'react';
 import { MasterPeminjaman } from '../../types';
+import { formatTimeDisplay } from '../../utils/date';
 
 interface CalendarCellProps {
   dayNumber: number;
@@ -16,15 +17,6 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
   events,
   onSelectEvent,
 }) => {
-  const formatTime = (dtStr: string): string => {
-    try {
-      const parts = dtStr.split(' ');
-      return parts[1] ? parts[1].substring(0, 5) : '';
-    } catch {
-      return '';
-    }
-  };
-
   const getPillColor = (index: number): string => {
     const colors = [
       'bg-amber-100 text-amber-900 border-amber-200',
@@ -59,20 +51,23 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
       </div>
 
       <div className="flex-1 space-y-1 overflow-hidden">
-        {events.slice(0, 2).map((ev, idx) => (
-          <button
-            key={ev.id_peminjaman}
-            type="button"
-            onClick={() => onSelectEvent(ev)}
-            className={`w-full text-left px-1.5 py-0.5 rounded text-[11px] truncate border cursor-pointer hover:opacity-90 block leading-tight ${getPillColor(
-              idx
-            )}`}
-            title={`${ev.keperluan} (${ev.nama_peminjam})`}
-          >
-            <span className="font-semibold mr-1">{formatTime(ev.mulai)}</span>
-            <span>{ev.keperluan}</span>
-          </button>
-        ))}
+        {events.slice(0, 2).map((ev, idx) => {
+          const time = formatTimeDisplay(ev.mulai);
+          return (
+            <button
+              key={ev.id_peminjaman}
+              type="button"
+              onClick={() => onSelectEvent(ev)}
+              className={`w-full text-left px-1.5 py-0.5 rounded text-[11px] truncate border cursor-pointer hover:opacity-90 block leading-tight ${getPillColor(
+                idx
+              )}`}
+              title={`${ev.keperluan} (${ev.nama_peminjam})`}
+            >
+              {time && <span className="font-semibold mr-1">{time}</span>}
+              <span>{ev.keperluan}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
