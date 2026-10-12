@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, FileText } from 'lucide-react';
+import { Calendar, Clock, FileText, AlertCircle } from 'lucide-react';
 
 interface StepWaktuDanKeperluanProps {
   mulai: string;
@@ -14,10 +14,12 @@ export const StepWaktuDanKeperluan: React.FC<StepWaktuDanKeperluanProps> = ({
   keperluan,
   onChangeField,
 }) => {
+  const isInvalidRange = Boolean(mulai && selesai && new Date(selesai) <= new Date(mulai));
+
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-base font-bold text-slate-900">3. Jadwal & Keperluan Peminjaman</h3>
+        <h3 className="text-base font-bold text-slate-900">3. Jadwal &amp; Keperluan Peminjaman</h3>
         <p className="text-xs text-slate-500">
           Tentukan rentang tanggal dan jam pelaksanaan kegiatan dinas secara tepat.
         </p>
@@ -51,11 +53,22 @@ export const StepWaktuDanKeperluan: React.FC<StepWaktuDanKeperluanProps> = ({
               required
               value={selesai}
               onChange={(e) => onChangeField('selesai', e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-[#009966] focus:ring-1 focus:ring-[#009966]"
+              className={`w-full pl-9 pr-3 py-2 bg-slate-50 border rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 ${
+                isInvalidRange
+                  ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500'
+                  : 'border-slate-200 focus:border-[#009966] focus:ring-[#009966]'
+              }`}
             />
           </div>
         </div>
       </div>
+
+      {isInvalidRange && (
+        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>Waktu selesai harus lebih akhir dari waktu mulai pelaksanaan.</span>
+        </div>
+      )}
 
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-1">

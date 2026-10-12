@@ -3,6 +3,7 @@ import { PeminjamanFull } from '../../types';
 import { BadgeStatus } from '../common/BadgeStatus';
 import { TimelineStatus } from './TimelineStatus';
 import { User, Building, Calendar, FileText, ShieldCheck, Layers } from 'lucide-react';
+import { formatDateTimeDisplay } from '../../utils/date';
 
 interface PelacakanDetailProps {
   data: PeminjamanFull;
@@ -43,10 +44,10 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
             <span>Jadwal &amp; Keperluan</span>
           </div>
           <p className="text-slate-700">
-            Mulai: <strong className="text-slate-900">{data.mulai}</strong>
+            Mulai: <strong className="text-slate-900">{formatDateTimeDisplay(data.mulai)}</strong>
           </p>
           <p className="text-slate-700">
-            Selesai: <strong className="text-slate-900">{data.selesai}</strong>
+            Selesai: <strong className="text-slate-900">{formatDateTimeDisplay(data.selesai)}</strong>
           </p>
           <p className="text-slate-600 italic">"{data.keperluan}"</p>
         </div>

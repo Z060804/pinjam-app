@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\SimpruController;
+use App\Http\Controllers\PeminjamanController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -22,6 +23,10 @@ Route::delete('/item/jenis/{id}', [SimpruController::class, 'deleteItem']);
 // Peminjaman (Customer submission & tracking, Admin Rekap, Agenda Kalender)
 Route::get('/peminjaman', [SimpruController::class, 'getAllPeminjaman']);
 Route::get('/master/peminjaman', [SimpruController::class, 'getAllPeminjaman']);
+Route::get('/item/peminjaman', [PeminjamanController::class, 'getItemPeminjaman']);
 Route::get('/peminjaman/{id}', [SimpruController::class, 'getPeminjamanById']);
-Route::post('/peminjaman', [SimpruController::class, 'storePeminjaman']);
+Route::post('/peminjaman', [PeminjamanController::class, 'store']);
 Route::patch('/peminjaman/{id}/status', [SimpruController::class, 'updateStatus']);
+
+// Remote conflict check
+Route::post('/check-conflict', [PeminjamanController::class, 'checkConflict']);

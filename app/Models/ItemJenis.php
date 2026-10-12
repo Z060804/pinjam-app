@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ItemJenis extends Model
 {
+    use HasFactory;
+
     protected $table = 'item_jenis';
 
     protected $fillable = [
@@ -36,5 +39,10 @@ class ItemJenis extends Model
     public function peminjamanItems(): HasMany
     {
         return $this->hasMany(PeminjamanItem::class, 'item_id');
+    }
+
+    public function itemPeminjaman(): HasMany
+    {
+        return $this->hasMany(ItemPeminjaman::class, 'item_id');
     }
 }

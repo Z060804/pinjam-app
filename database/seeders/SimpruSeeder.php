@@ -6,6 +6,7 @@ use App\Models\ItemJenis;
 use App\Models\MasterJenis;
 use App\Models\Peminjaman;
 use App\Models\PeminjamanItem;
+use App\Models\ItemPeminjaman;
 use Illuminate\Database\Seeder;
 
 class SimpruSeeder extends Seeder
@@ -167,10 +168,13 @@ class SimpruSeeder extends Seeder
         $loans = [
             [
                 'id' => 'PMJ-202610-001',
+                'id_peminjaman' => 'PMJ-202610-001',
                 'tgl_pengajuan' => '2026-10-01',
                 'nip' => '198504122010011003',
                 'nama_pemohon' => 'Drs. H. Ahmad Fauzi, M.Ag.',
+                'nama_peminjam' => 'Drs. H. Ahmad Fauzi, M.Ag.',
                 'unit_pemohon' => 'Seksi Pendidikan Madrasah (Penma)',
+                'unit_kerja' => 'Seksi Pendidikan Madrasah (Penma)',
                 'pihak_pemohon' => 'Internal Kemenag Sleman',
                 'nomor_hp' => '081234567890',
                 'penanggung_jawab' => 'Drs. H. Ahmad Fauzi',
@@ -179,21 +183,27 @@ class SimpruSeeder extends Seeder
                 'tgl_selesai' => '2026-10-05',
                 'waktu_mulai' => '08:00',
                 'waktu_selesai' => '14:00',
+                'mulai' => '2026-10-05 08:00:00',
+                'selesai' => '2026-10-05 14:00:00',
                 'keperluan' => 'Rakor Persiapan Asesmen Madrasah se-Kabupaten Sleman',
                 'surat_url' => 'surat_penma_001.pdf',
+                'surat_peminjaman' => 'surat_penma_001.pdf',
                 'status' => 'Disetujui',
                 'petugas' => 'Admin SiRuang',
                 'items' => [
-                    ['item_id' => 3, 'jumlah' => 1],
+                    ['item_id' => 1, 'jumlah' => 1],
                     ['item_id' => 9, 'jumlah' => 1],
                 ],
             ],
             [
                 'id' => 'PMJ-202610-002',
+                'id_peminjaman' => 'PMJ-202610-002',
                 'tgl_pengajuan' => '2026-10-04',
                 'nip' => '199002152014022001',
                 'nama_pemohon' => 'Siti Nurhaliza, S.H.I.',
+                'nama_peminjam' => 'Siti Nurhaliza, S.H.I.',
                 'unit_pemohon' => 'Seksi Bimbingan Masyarakat Islam (Bimas Islam)',
+                'unit_kerja' => 'Seksi Bimbingan Masyarakat Islam (Bimas Islam)',
                 'pihak_pemohon' => 'Internal Kemenag Sleman',
                 'nomor_hp' => '089912345678',
                 'penanggung_jawab' => 'Siti Nurhaliza',
@@ -202,8 +212,11 @@ class SimpruSeeder extends Seeder
                 'tgl_selesai' => '2026-10-07',
                 'waktu_mulai' => '09:30',
                 'waktu_selesai' => '16:00',
+                'mulai' => '2026-10-07 09:30:00',
+                'selesai' => '2026-10-07 16:00:00',
                 'keperluan' => 'Monitoring dan Pembinaan Pengantin Baru KUA Sleman Barat',
                 'surat_url' => 'surat_bimas_014.pdf',
+                'surat_peminjaman' => 'surat_bimas_014.pdf',
                 'status' => 'Disetujui',
                 'petugas' => 'Admin SiRuang',
                 'items' => [
@@ -212,10 +225,13 @@ class SimpruSeeder extends Seeder
             ],
             [
                 'id' => 'PMJ-202610-003',
+                'id_peminjaman' => 'PMJ-202610-003',
                 'tgl_pengajuan' => '2026-10-06',
                 'nip' => '197908232006041005',
                 'nama_pemohon' => 'Bambang Sudarsono, S.Pd.I.',
+                'nama_peminjam' => 'Bambang Sudarsono, S.Pd.I.',
                 'unit_pemohon' => 'Penyelenggara Zakat dan Wakaf (Gara Zawa)',
+                'unit_kerja' => 'Penyelenggara Zakat dan Wakaf (Gara Zawa)',
                 'pihak_pemohon' => 'Internal Kemenag Sleman',
                 'nomor_hp' => '087654321098',
                 'penanggung_jawab' => 'Bambang Sudarsono',
@@ -224,21 +240,27 @@ class SimpruSeeder extends Seeder
                 'tgl_selesai' => '2026-10-12',
                 'waktu_mulai' => '08:30',
                 'waktu_selesai' => '12:00',
+                'mulai' => '2026-10-12 08:30:00',
+                'selesai' => '2026-10-12 12:00:00',
                 'keperluan' => 'Sosialisasi Percepatan Sertifikasi Tanah Wakaf Rumah Ibadah',
                 'surat_url' => 'surat_zawa_009.pdf',
+                'surat_peminjaman' => 'surat_zawa_009.pdf',
                 'status' => 'Disetujui',
                 'petugas' => 'Admin SiRuang',
                 'items' => [
-                    ['item_id' => 4, 'jumlah' => 1],
+                    ['item_id' => 2, 'jumlah' => 1],
                     ['item_id' => 8, 'jumlah' => 2],
                 ],
             ],
             [
                 'id' => 'PMJ-202610-004',
+                'id_peminjaman' => 'PMJ-202610-004',
                 'tgl_pengajuan' => '2026-10-07',
                 'nip' => '199205102019031002',
                 'nama_pemohon' => 'Rizki Pratama, M.Si.',
+                'nama_peminjam' => 'Rizki Pratama, M.Si.',
                 'unit_pemohon' => 'Subbag Tata Usaha - Kehumasan',
+                'unit_kerja' => 'Subbag Tata Usaha - Kehumasan',
                 'pihak_pemohon' => 'Internal Kemenag Sleman',
                 'nomor_hp' => '082134567890',
                 'penanggung_jawab' => 'Rizki Pratama',
@@ -247,21 +269,27 @@ class SimpruSeeder extends Seeder
                 'tgl_selesai' => '2026-10-16',
                 'waktu_mulai' => '08:00',
                 'waktu_selesai' => '16:00',
+                'mulai' => '2026-10-15 08:00:00',
+                'selesai' => '2026-10-16 16:00:00',
                 'keperluan' => 'Pelatihan Kehumasan dan Pengelolaan Media Sosial Kemenag Sleman',
                 'surat_url' => 'surat_tu_humas_003.pdf',
+                'surat_peminjaman' => 'surat_tu_humas_003.pdf',
                 'status' => 'Menunggu Persetujuan',
                 'petugas' => null,
                 'items' => [
-                    ['item_id' => 1, 'jumlah' => 1],
+                    ['item_id' => 3, 'jumlah' => 1],
                     ['item_id' => 11, 'jumlah' => 1],
                 ],
             ],
             [
                 'id' => 'PMJ-202610-005',
+                'id_peminjaman' => 'PMJ-202610-005',
                 'tgl_pengajuan' => '2026-10-08',
                 'nip' => '198711042011012008',
                 'nama_pemohon' => 'Tri Wahyuni, S.Ag.',
+                'nama_peminjam' => 'Tri Wahyuni, S.Ag.',
                 'unit_pemohon' => 'Seksi Pendidikan Agama Islam (PAIS)',
+                'unit_kerja' => 'Seksi Pendidikan Agama Islam (PAIS)',
                 'pihak_pemohon' => 'Internal Kemenag Sleman',
                 'nomor_hp' => '085678901234',
                 'penanggung_jawab' => 'Tri Wahyuni',
@@ -270,12 +298,15 @@ class SimpruSeeder extends Seeder
                 'tgl_selesai' => '2026-10-20',
                 'waktu_mulai' => '09:00',
                 'waktu_selesai' => '13:00',
+                'mulai' => '2026-10-20 09:00:00',
+                'selesai' => '2026-10-20 13:00:00',
                 'keperluan' => 'Workshop Implementasi Kurikulum Merdeka Guru PAI Sleman',
                 'surat_url' => 'surat_pais_021.pdf',
+                'surat_peminjaman' => 'surat_pais_021.pdf',
                 'status' => 'Disetujui',
                 'petugas' => 'Admin SiRuang',
                 'items' => [
-                    ['item_id' => 2, 'jumlah' => 1],
+                    ['item_id' => 4, 'jumlah' => 1],
                     ['item_id' => 10, 'jumlah' => 1],
                 ],
             ],
@@ -287,13 +318,26 @@ class SimpruSeeder extends Seeder
 
             $peminjaman = Peminjaman::updateOrCreate(['id' => $loanData['id']], $loanData);
 
-            PeminjamanItem::where('peminjaman_id', $peminjaman->id)->delete();
-            foreach ($itemsData as $it) {
-                PeminjamanItem::create([
-                    'peminjaman_id' => $peminjaman->id,
-                    'item_id' => $it['item_id'],
-                    'jumlah' => $it['jumlah'],
-                ]);
+            if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
+                PeminjamanItem::where('peminjaman_id', $peminjaman->id)->delete();
+                foreach ($itemsData as $it) {
+                    PeminjamanItem::create([
+                        'peminjaman_id' => $peminjaman->id,
+                        'item_id' => $it['item_id'],
+                        'jumlah' => $it['jumlah'],
+                    ]);
+                }
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('item_peminjaman')) {
+                ItemPeminjaman::where('id_peminjaman', $peminjaman->id_peminjaman)->delete();
+                foreach ($itemsData as $it) {
+                    ItemPeminjaman::create([
+                        'id_peminjaman' => $peminjaman->id_peminjaman,
+                        'item_id' => $it['item_id'],
+                        'jumlah' => $it['jumlah'],
+                    ]);
+                }
             }
         }
     }
