@@ -240,12 +240,21 @@ class PeminjamanController extends Controller
             $now = Carbon::now();
             $prefix = 'PMJ-' . $now->format('Ym') . '-';
 
-            $lastSeq = (int) (Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
+            $records = Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
                 ->orWhere('id', 'like', $prefix . '%')
                 ->lockForUpdate()
-                ->pluck('id_peminjaman')
-                ->map(fn ($id) => (int) substr($id, strlen($prefix)))
-                ->max() ?? 0);
+                ->get(['id_peminjaman', 'id']);
+
+            $lastSeq = 0;
+            foreach ($records as $r) {
+                $seqId = $r->id_peminjaman ?: $r->id;
+                if ($seqId && str_starts_with($seqId, $prefix)) {
+                    $num = (int) substr($seqId, strlen($prefix));
+                    if ($num > $lastSeq) {
+                        $lastSeq = $num;
+                    }
+                }
+            }
 
             do {
                 $lastSeq++;
@@ -279,11 +288,13 @@ class PeminjamanController extends Controller
             ]);
 
             foreach ($itemsPayload as $item) {
-                ItemPeminjaman::create([
-                    'id_peminjaman' => $newId,
-                    'item_id' => $item['item_id'],
-                    'jumlah' => $item['jumlah'],
-                ]);
+                if (\Illuminate\Support\Facades\Schema::hasTable('item_peminjaman')) {
+                    ItemPeminjaman::create([
+                        'id_peminjaman' => $newId,
+                        'item_id' => $item['item_id'],
+                        'jumlah' => $item['jumlah'],
+                    ]);
+                }
 
                 if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
                     \App\Models\PeminjamanItem::create([

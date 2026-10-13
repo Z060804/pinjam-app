@@ -344,7 +344,13 @@ class SimpruSeeder extends Seeder
             $itemsData = $loanData['items'];
             unset($loanData['items']);
 
-            $peminjaman = Peminjaman::updateOrCreate(['id' => $loanData['id']], $loanData);
+            $loanId = $loanData['id_peminjaman'] ?? $loanData['id'];
+            $peminjaman = Peminjaman::where('id_peminjaman', $loanId)->orWhere('id', $loanId)->first();
+            if ($peminjaman) {
+                $peminjaman->update($loanData);
+            } else {
+                $peminjaman = Peminjaman::create($loanData);
+            }
 
             if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
                 PeminjamanItem::where('peminjaman_id', $peminjaman->id)->delete();

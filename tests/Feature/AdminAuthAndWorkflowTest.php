@@ -368,4 +368,95 @@ class AdminAuthAndWorkflowTest extends TestCase
         $response->assertStatus(200);
         $this->assertStringContainsString('pdf', (string) $response->headers->get('Content-Type'));
     }
+
+    public function test_web_routes_render_views_without_target_class_view_exception(): void
+    {
+        $resHome = $this->get('/');
+        $resHome->assertStatus(200);
+        $this->assertStringContainsString('id="root"', $resHome->getContent());
+
+        $resAdmin = $this->get('/admin');
+        $resAdmin->assertStatus(200);
+        $this->assertStringContainsString('id="admin-root"', $resAdmin->getContent());
+
+        $resAdminSub = $this->get('/admin/rekap');
+        $resAdminSub->assertStatus(200);
+        $this->assertStringContainsString('id="admin-root"', $resAdminSub->getContent());
+    }
+
+    public function test_admin_cannot_approve_peminjaman_with_conflicting_schedule(): void
+    {
+        $admin = User::first();
+
+        // PMJ-202610-001 is Disetujui for item 1 (Smartroom, capacity 1) on 2026-10-05 08:00 to 14:00.
+        // Create a new pending request that overlaps this period requesting the same room
+        $pendingLoan = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202610-999',
+            'id' => 'PMJ-202610-999',
+            'tgl_pengajuan' => '2026-10-02',
+            'nip' => '199001012015011001',
+            'nama_peminjam' => 'Pemohon Tumpang Tindih',
+            'nama_pemohon' => 'Pemohon Tumpang Tindih',
+            'unit_kerja' => 'Seksi Penma',
+            'unit_pemohon' => 'Seksi Penma',
+            'mulai' => '2026-10-05 10:00:00',
+            'selesai' => '2026-10-05 12:00:00',
+            'tgl_mulai' => '2026-10-05',
+            'tgl_selesai' => '2026-10-05',
+            'waktu_mulai' => '10:00',
+            'waktu_selesai' => '12:00',
+            'keperluan' => 'Rakor Tambahan',
+            'status' => 'Menunggu Persetujuan',
+        ]);
+
+        ItemPeminjaman::create([
+            'id_peminjaman' => 'PMJ-202610-999',
+            'item_id' => 1,
+            'jumlah' => 1,
+        ]);
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
+            PeminjamanItem::create([
+                'peminjaman_id' => 'PMJ-202610-999',
+                'item_id' => 1,
+                'jumlah' => 1,
+            ]);
+        }
+
+        // Admin attempts to approve this conflicting request
+        $response = $this->actingAs($admin, 'sanctum')->patchJson('/api/peminjaman/PMJ-202610-999/status', [
+            'status' => 'Disetujui',
+            'petugas' => 'Admin Penguji',
+        ]);
+
+        $response->assertStatus(422)
+                 ->assertJson(['success' => false])
+                 ->assertJsonPath('conflicts.0.item_id', 1);
+
+        // Ensure status in database remains unapproved
+        $pendingLoan->refresh();
+        $this->assertEquals('Menunggu Persetujuan', $pendingLoan->status);
+    }
+
+    public function test_admin_can_approve_non_conflicting_pending_peminjaman(): void
+    {
+        $admin = User::first();
+        // PMJ-202610-004 is Menunggu Persetujuan (Ruangan 3, Perlengkapan 11 on 2026-10-15)
+        $loan = Peminjaman::where('id_peminjaman', 'PMJ-202610-004')->first();
+        $this->assertNotNull($loan);
+        $this->assertEquals('Menunggu Persetujuan', $loan->status);
+
+        $response = $this->actingAs($admin, 'sanctum')->patchJson("/api/peminjaman/{$loan->id_peminjaman}/status", [
+            'status' => 'Disetujui',
+            'petugas' => 'Petugas Resmi',
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJson(['success' => true])
+                 ->assertJsonPath('data.status', 'Disetujui');
+
+        $loan->refresh();
+        $this->assertEquals('Disetujui', $loan->status);
+        $this->assertEquals('Petugas Resmi', $loan->petugas);
+    }
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, LogOut, LayoutDashboard, DoorOpen, Car, Package } from 'lucide-react';
+import { Building2, LogOut, LayoutDashboard, DoorOpen, Car, Package, Globe } from 'lucide-react';
 import { AdminActiveTab } from '../../types/admin';
 
 interface AdminNavbarProps {
@@ -29,15 +29,19 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-4">
           {/* Logo */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100">
+          <a
+            href="/"
+            title="Kunjungi Portal Publik SIMPRU"
+            className="flex items-center gap-3 shrink-0 group cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100 group-hover:scale-105 transition-transform">
               <Building2 className="w-5 h-5 text-[#009966]" />
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-900 leading-none">SIMPRU</div>
+              <div className="text-sm font-bold text-slate-900 leading-none group-hover:text-[#009966] transition-colors">SIMPRU Admin</div>
               <div className="text-[10px] text-slate-400 leading-none mt-0.5">Kementerian Agama Kabupaten Sleman</div>
             </div>
-          </div>
+          </a>
 
           {/* Nav */}
           <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
@@ -65,6 +69,14 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
 
           {/* User & logout */}
           <div className="flex items-center gap-3 shrink-0">
+            <a
+              href="/"
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-[#009966] hover:bg-emerald-50 border border-slate-200 transition-all cursor-pointer"
+              title="Kunjungi Portal Publik"
+            >
+              <Globe className="w-3.5 h-3.5 text-slate-400" />
+              Portal Publik
+            </a>
             <div className="hidden sm:block text-right">
               <div className="text-xs font-bold text-slate-800 leading-none">{adminName}</div>
               <div className="text-[10px] text-slate-400 leading-none mt-0.5">{adminEmail}</div>

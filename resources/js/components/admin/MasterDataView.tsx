@@ -135,6 +135,10 @@ export function MasterDataView<T extends { id: number; nama: string; is_active: 
         setList((prev) => [newItem, ...prev]);
       }
       closeModal();
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = errorObj.response?.data?.message || errorObj.message || 'Gagal menyimpan data ke server.';
+      alert(msg);
     } finally {
       setSaving(false);
     }

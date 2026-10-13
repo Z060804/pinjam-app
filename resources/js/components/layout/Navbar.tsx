@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActiveTab } from '../../types';
-import { Building2, Calendar, FilePlus2, Search, Menu, X, Landmark } from 'lucide-react';
+import { Building2, Calendar, FilePlus2, Search, Menu, X, Landmark, Shield } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -67,6 +67,14 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
                 </button>
               );
             })}
+            <a
+              href="/admin"
+              id="nav-admin-link"
+              className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-[#009966] bg-slate-100 hover:bg-emerald-50 transition border border-slate-200 hover:border-emerald-200"
+            >
+              <Shield className="w-3.5 h-3.5 text-slate-500" />
+              Masuk Admin
+            </a>
           </nav>
 
           <div className="md:hidden">
@@ -101,6 +109,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
               </button>
             );
           })}
+          <a
+            href="/admin"
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-[#009966] border-t border-slate-100 mt-2 pt-2"
+          >
+            <Shield className="w-4 h-4 text-slate-500" />
+            Portal Admin
+          </a>
         </div>
       )}
     </header>

@@ -611,6 +611,19 @@ class SimpruController extends Controller
             return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
         }
 
+        // Jika mengubah status menjadi 'Disetujui', pastikan tidak ada bentrok jadwal dengan peminjaman lain
+        if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
+            $conflicts = $this->detectApprovalConflicts($peminjaman);
+            if (!empty($conflicts)) {
+                $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+                return response()->json([
+                    'success' => false,
+                    'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
+                    'conflicts' => $conflicts,
+                ], 422);
+            }
+        }
+
         $peminjaman->status = $validated['status'];
         if (isset($validated['petugas'])) {
             $peminjaman->petugas = $validated['petugas'];
@@ -624,5 +637,80 @@ class SimpruController extends Controller
             'message' => 'Status peminjaman berhasil diperbarui',
             'data' => $peminjaman,
         ]);
+    }
+
+    /**
+     * Deteksi bentrok jadwal saat admin hendak menyetujui permohonan peminjaman.
+     */
+    protected function detectApprovalConflicts(Peminjaman $peminjaman): array
+    {
+        $conflicts = [];
+        $mulaiStr = $peminjaman->mulai ?: ($peminjaman->tgl_mulai . ' ' . ($peminjaman->waktu_mulai ?: '08:00'));
+        $selesaiStr = $peminjaman->selesai ?: ($peminjaman->tgl_selesai . ' ' . ($peminjaman->waktu_selesai ?: '16:00'));
+
+        $mulaiCarbon = Carbon::parse($mulaiStr);
+        $selesaiCarbon = Carbon::parse($selesaiStr);
+
+        $currentId = $peminjaman->id_peminjaman ?? $peminjaman->id;
+
+        $overlappingBookings = Peminjaman::where('status', 'Disetujui')
+            ->where(function ($query) use ($currentId) {
+                $query->where('id_peminjaman', '!=', $currentId)
+                      ->where('id', '!=', $currentId);
+            })
+            ->where(function ($query) use ($mulaiCarbon, $selesaiCarbon) {
+                $query->where('mulai', '<', $selesaiCarbon)
+                      ->where('selesai', '>', $mulaiCarbon);
+            })
+            ->with(['items.item', 'itemPeminjaman.item'])
+            ->get();
+
+        $itemList = $peminjaman->items->isNotEmpty() ? $peminjaman->items : $peminjaman->itemPeminjaman;
+
+        $reqTotals = [];
+        foreach ($itemList as $it) {
+            $itemId = (int) $it->item_id;
+            $qty = (int) $it->jumlah;
+            $reqTotals[$itemId] = ($reqTotals[$itemId] ?? 0) + $qty;
+        }
+
+        foreach ($reqTotals as $itemId => $reqQty) {
+            $itemModel = ItemJenis::find($itemId);
+            if (!$itemModel) {
+                continue;
+            }
+
+            $bookedQty = 0;
+            $conflictDetails = [];
+
+            foreach ($overlappingBookings as $booking) {
+                $bItems = $booking->items->isNotEmpty() ? $booking->items : $booking->itemPeminjaman;
+                foreach ($bItems as $bookedItem) {
+                    if ((int) $bookedItem->item_id === $itemId) {
+                        $bookedQty += (int) $bookedItem->jumlah;
+                        $conflictDetails[] = [
+                            'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
+                            'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
+                            'mulai' => (string) $booking->mulai,
+                            'selesai' => (string) $booking->selesai,
+                            'keperluan' => $booking->keperluan,
+                        ];
+                    }
+                }
+            }
+
+            if (($bookedQty + $reqQty) > $itemModel->quantity) {
+                $conflicts[] = [
+                    'item_id' => $itemId,
+                    'item_nama' => $itemModel->nama,
+                    'kapasitas_total' => $itemModel->quantity,
+                    'sudah_dipinjam' => $bookedQty,
+                    'diminta' => $reqQty,
+                    'overlapping_bookings' => $conflictDetails,
+                ];
+            }
+        }
+
+        return $conflicts;
     }
 }

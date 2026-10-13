@@ -57,6 +57,15 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                   Pelacakan Peminjaman
                 </button>
               </li>
+              <li>
+                <a
+                  href="/admin"
+                  id="footer-admin-link"
+                  className="hover:text-[#009966] transition cursor-pointer text-left block"
+                >
+                  Portal Admin SIMPRU
+                </a>
+              </li>
             </ul>
           </div>
 
