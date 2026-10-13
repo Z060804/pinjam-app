@@ -44,11 +44,20 @@ class PeminjamanApiTest extends TestCase
 
     public function test_can_get_master_peminjaman(): void
     {
-        $response = $this->getJson('/api/master/peminjaman');
+        // Public calendar endpoint is accessible
+        $responsePublic = $this->getJson('/api/peminjaman');
+        $responsePublic->assertStatus(200)
+                       ->assertJson(['success' => true]);
 
-        $response->assertStatus(200)
-                 ->assertJson(['success' => true])
-                 ->assertJsonStructure(['success', 'data']);
+        // Rekap admin endpoint is protected by Sanctum
+        $responseGuest = $this->getJson('/api/master/peminjaman');
+        $responseGuest->assertStatus(401);
+
+        $admin = \App\Models\User::first();
+        $responseAdmin = $this->actingAs($admin, 'sanctum')->getJson('/api/master/peminjaman');
+        $responseAdmin->assertStatus(200)
+                      ->assertJson(['success' => true])
+                      ->assertJsonStructure(['success', 'data']);
     }
 
     public function test_can_get_single_peminjaman_by_id(): void

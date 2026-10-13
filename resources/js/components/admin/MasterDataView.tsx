@@ -27,7 +27,7 @@ export interface MasterDataViewProps<T extends { id: number; nama: string; is_ac
   fetchItems: () => Promise<T[]>;
   createItem: (data: any) => Promise<T>;
   updateItem: (id: number, data: any) => Promise<void>;
-  deleteItem: (id: number) => Promise<void>;
+  deleteItem: (id: number) => Promise<string | null | void>;
   renderItemBadges?: (item: T) => React.ReactNode;
   renderItemMeta: (item: T) => React.ReactNode;
   defaultFormData: () => Record<string, any>;
@@ -142,8 +142,17 @@ export function MasterDataView<T extends { id: number; nama: string; is_active: 
 
   const handleDelete = async (id: number) => {
     if (!confirm(`Hapus ${entityName.toLowerCase()} ini?`)) return;
-    await deleteItem(id);
-    setList((prev) => prev.filter((it) => it.id !== id));
+    try {
+      const err = await deleteItem(id);
+      if (err) {
+        alert(err);
+        return;
+      }
+      setList((prev) => prev.filter((it) => it.id !== id));
+    } catch (e: unknown) {
+      const errorObj = e as { response?: { data?: { message?: string } }; message?: string };
+      alert(errorObj.response?.data?.message || errorObj.message || `Gagal menghapus ${entityName.toLowerCase()}.`);
+    }
   };
 
   return (

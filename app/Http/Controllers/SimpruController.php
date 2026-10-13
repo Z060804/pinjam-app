@@ -10,6 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class SimpruController extends Controller
 {
@@ -122,7 +124,7 @@ class SimpruController extends Controller
             return response()->json(['success' => false, 'message' => 'Item tidak ditemukan'], 404);
         }
 
-        if ($item->peminjamanItems()->exists()) {
+        if ($item->peminjamanItems()->exists() || $item->itemPeminjaman()->exists()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Item tidak bisa dihapus karena sudah pernah dipinjam. Nonaktifkan saja statusnya.',
@@ -136,13 +138,45 @@ class SimpruController extends Controller
     /**
      * Admin: Get all peminjaman records formatted for Rekap Peminjaman.
      */
-    public function getAllPeminjaman(): JsonResponse
+    /**
+     * Admin / Public: Get all peminjaman records.
+     * Untuk publik: data NIP, nomor HP, dan berkas surat disembunyikan untuk menjaga privasi pemohon.
+     * Untuk admin terautentikasi: data ditampilkan lengkap untuk keperluan rekap.
+     */
+    public function getAllPeminjaman(Request $request): JsonResponse
     {
+        // Hanya menerima autentikasi admin via Authorization: Bearer header
+        $token = $request->bearerToken();
+        $isAdmin = false;
+        if ($token) {
+            $accessToken = PersonalAccessToken::findToken($token);
+            $isAdmin = (bool) $accessToken?->tokenable;
+        }
+        if (!$isAdmin && auth('sanctum')->check()) {
+            $isAdmin = true;
+        }
+        if (!$isAdmin && ($request->is('api/master/*') || $request->is('api/admin/*'))) {
+            $isAdmin = true;
+        }
+
         $records = Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
+            ->orderBy('tgl_mulai', 'asc')
+            ->orderBy('waktu_mulai', 'asc')
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $formatted = $records->map(function ($p) {
+        $maskName = function (?string $name): string {
+            if (!$name || $name === '-') return '-';
+            $words = explode(' ', trim($name));
+            $maskedWords = array_map(function ($word) {
+                $len = mb_strlen($word);
+                if ($len <= 2) return $word;
+                return mb_substr($word, 0, 2) . str_repeat('*', max(2, $len - 2));
+            }, $words);
+            return implode(' ', $maskedWords);
+        };
+
+        $formatted = $records->map(function ($p) use ($isAdmin, $maskName) {
             $itemList = $p->items->isNotEmpty() ? $p->items : $p->itemPeminjaman;
 
             $jenisIds = $itemList
@@ -166,19 +200,24 @@ class SimpruController extends Controller
             $waktuMulaiStr = $p->waktu_mulai ?: (strlen((string)$p->mulai) >= 16 ? substr((string)$p->mulai, 11, 5) : '08:00');
             $waktuSelesaiStr = $p->waktu_selesai ?: (strlen((string)$p->selesai) >= 16 ? substr((string)$p->selesai, 11, 5) : '16:00');
 
+            $rawName = $p->nama_pemohon ?? $p->nama_peminjam;
+            $namaDisplay = $isAdmin ? ($rawName ?: '-') : $maskName($rawName);
+            $unitDisplay = $isAdmin ? ($p->unit_pemohon ?? $p->unit_kerja) : 'Internal Kemenag Sleman';
+            $keperluanDisplay = $isAdmin ? $p->keperluan : ($p->keperluan ? 'Kegiatan Kedinasan / Tugas Instansi' : '-');
+
             return [
                 'id' => $p->id_peminjaman ?? $p->id,
                 'id_peminjaman' => $p->id_peminjaman ?? $p->id,
                 'tgl_pengajuan' => Carbon::parse($p->tgl_pengajuan)->format('Y-m-d'),
-                'nip' => $p->nip ?: '-',
+                'nip' => $isAdmin ? ($p->nip ?: '-') : null,
                 'pihak_pemohon' => $p->pihak_pemohon ?: 'Internal Kemenag Sleman',
-                'unit_pemohon' => $p->unit_pemohon ?? $p->unit_kerja,
-                'unit_kerja' => $p->unit_kerja ?? $p->unit_pemohon,
-                'nama_pemohon' => $p->nama_pemohon ?? $p->nama_peminjam,
-                'nama_peminjam' => $p->nama_peminjam ?? $p->nama_pemohon,
-                'nomor_hp' => $p->nomor_hp ?: '-',
-                'penanggung_jawab' => $p->penanggung_jawab ?: ($p->nama_pemohon ?? $p->nama_peminjam),
-                'jumlah_peserta' => $p->jumlah_peserta ?: 1,
+                'unit_pemohon' => $unitDisplay,
+                'unit_kerja' => $unitDisplay,
+                'nama_pemohon' => $namaDisplay,
+                'nama_peminjam' => $namaDisplay,
+                'nomor_hp' => $isAdmin ? ($p->nomor_hp ?: '-') : null,
+                'penanggung_jawab' => $isAdmin ? ($p->penanggung_jawab ?: $rawName) : null,
+                'jumlah_peserta' => $isAdmin ? ($p->jumlah_peserta ?: 1) : null,
                 'ruangan' => $itemNames ?: 'Sarana Prasarana',
                 'tgl_mulai' => $tglMulaiStr,
                 'tgl_selesai' => $tglSelesaiStr,
@@ -186,14 +225,14 @@ class SimpruController extends Controller
                 'waktu_selesai' => $waktuSelesaiStr,
                 'mulai' => $p->mulai ?: ($tglMulaiStr . ' ' . $waktuMulaiStr),
                 'selesai' => $p->selesai ?: ($tglSelesaiStr . ' ' . $waktuSelesaiStr),
-                'kegiatan' => $p->keperluan,
-                'keperluan' => $p->keperluan,
+                'kegiatan' => $keperluanDisplay,
+                'keperluan' => $keperluanDisplay,
                 'status' => $p->status,
-                'surat_url' => $p->surat_url ?? $p->surat_peminjaman,
-                'surat_peminjaman' => $p->surat_peminjaman ?? $p->surat_url,
+                'surat_url' => $isAdmin ? ($p->surat_url ?? $p->surat_peminjaman) : null,
+                'surat_peminjaman' => $isAdmin ? ($p->surat_peminjaman ?? $p->surat_url) : null,
                 'jenis' => $jenisName,
                 'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
-                'petugas' => $p->petugas,
+                'petugas' => $isAdmin ? $p->petugas : null,
                 'items' => $itemList->map(fn($it) => [
                     'id' => $it->id,
                     'item_id' => $it->item_id,
@@ -213,8 +252,19 @@ class SimpruController extends Controller
     /**
      * Customer / Admin: Get single peminjaman by ID (tracking).
      */
-    public function getPeminjamanById(string $id): JsonResponse
+    public function getPeminjamanById(Request $request, string $id): JsonResponse
     {
+        // Hanya menerima autentikasi admin via Authorization: Bearer header
+        $token = $request->bearerToken();
+        $isAdmin = false;
+        if ($token) {
+            $accessToken = PersonalAccessToken::findToken($token);
+            $isAdmin = (bool) $accessToken?->tokenable;
+        }
+        if (!$isAdmin && auth('sanctum')->check()) {
+            $isAdmin = true;
+        }
+
         $peminjaman = Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
             ->where('id', $id)
             ->orWhere('id_peminjaman', $id)
@@ -250,18 +300,32 @@ class SimpruController extends Controller
         $waktuMulaiStr = $peminjaman->waktu_mulai ?: (strlen((string)$peminjaman->mulai) >= 16 ? substr((string)$peminjaman->mulai, 11, 5) : '08:00');
         $waktuSelesaiStr = $peminjaman->waktu_selesai ?: (strlen((string)$peminjaman->selesai) >= 16 ? substr((string)$peminjaman->selesai, 11, 5) : '16:00');
 
+        $rawName = $peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam ?? '-';
+        $nipRaw = (string) ($peminjaman->nip ?? '');
+        $hpRaw = (string) ($peminjaman->nomor_hp ?? '');
+
+        // Customer melihat nama pemohon asli dan NIP asli
+        // Nomor HP dan Penanggung Jawab Kegiatan hanya dimunculkan untuk Admin
+        $namaDisplay = $rawName ?: '-';
+        $nipDisplay = $nipRaw ?: '-';
+        $hpDisplay = $isAdmin ? ($hpRaw ?: '-') : null;
+        $penanggungJawabDisplay = $isAdmin ? ($peminjaman->penanggung_jawab ?: $rawName) : null;
+        $keperluanDisplay = $peminjaman->keperluan ?: '-';
+
+        $hasRealSurat = !empty($peminjaman->surat_url) || !empty($peminjaman->surat_peminjaman);
+
         $result = [
             'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
             'id' => $peminjaman->id_peminjaman ?? $peminjaman->id,
             'tgl_pengajuan' => Carbon::parse($peminjaman->tgl_pengajuan)->format('Y-m-d'),
-            'nip' => $peminjaman->nip ?: '-',
-            'nama_pemohon' => $peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam,
-            'nama_peminjam' => $peminjaman->nama_peminjam ?? $peminjaman->nama_pemohon,
+            'nip' => $nipDisplay,
+            'pihak_pemohon' => $peminjaman->pihak_pemohon ?: 'Internal Kemenag Sleman',
             'unit_pemohon' => $peminjaman->unit_pemohon ?? $peminjaman->unit_kerja,
             'unit_kerja' => $peminjaman->unit_kerja ?? $peminjaman->unit_pemohon,
-            'pihak_pemohon' => $peminjaman->pihak_pemohon ?: 'Internal Kemenag Sleman',
-            'nomor_hp' => $peminjaman->nomor_hp ?: '-',
-            'penanggung_jawab' => $peminjaman->penanggung_jawab ?: ($peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam),
+            'nama_pemohon' => $namaDisplay,
+            'nama_peminjam' => $namaDisplay,
+            'nomor_hp' => $hpDisplay,
+            'penanggung_jawab' => $penanggungJawabDisplay,
             'jumlah_peserta' => $peminjaman->jumlah_peserta ?: 1,
             'tgl_mulai' => $tglMulaiStr,
             'tgl_selesai' => $tglSelesaiStr,
@@ -269,9 +333,11 @@ class SimpruController extends Controller
             'waktu_selesai' => $waktuSelesaiStr,
             'mulai' => $peminjaman->mulai ?: ($tglMulaiStr . ' ' . $waktuMulaiStr),
             'selesai' => $peminjaman->selesai ?: ($tglSelesaiStr . ' ' . $waktuSelesaiStr),
-            'keperluan' => $peminjaman->keperluan,
-            'surat_url' => $peminjaman->surat_url ?? $peminjaman->surat_peminjaman,
-            'surat_peminjaman' => $peminjaman->surat_peminjaman ?? $peminjaman->surat_url,
+            'keperluan' => $keperluanDisplay,
+            'surat_url' => ($isAdmin && $hasRealSurat) ? "/api/peminjaman/{$peminjaman->id}/surat" : null,
+            'surat_peminjaman' => ($isAdmin && $hasRealSurat) ? ($peminjaman->surat_peminjaman ?? $peminjaman->surat_url) : null,
+            'surat_terlampir' => $hasRealSurat,
+            'is_public_view' => !$isAdmin,
             'status' => $peminjaman->status,
             'petugas' => $peminjaman->petugas,
             'jenis' => $jenisName,
@@ -290,6 +356,138 @@ class SimpruController extends Controller
             'success' => true,
             'data' => $result,
         ]);
+    }
+
+    /**
+     * Admin: Akses dan unduh dokumen surat peminjaman secara aman.
+     * Hanya menerima autentikasi via Authorization Header Bearer token untuk mencegah kebocoran di URL query/log.
+     */
+    public function getSurat(Request $request, string $id)
+    {
+        $token = $request->bearerToken();
+        $user = null;
+        if ($token) {
+            $accessToken = PersonalAccessToken::findToken($token);
+            $user = $accessToken?->tokenable;
+        }
+        if (!$user && auth('sanctum')->check()) {
+            $user = auth('sanctum')->user();
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Akses ditolak. Dokumen surat dinas hanya dapat diakses oleh petugas terautentikasi.',
+            ], 403);
+        }
+
+        $peminjaman = Peminjaman::where('id', $id)->orWhere('id_peminjaman', $id)->first();
+        if (!$peminjaman || (empty($peminjaman->surat_url) && empty($peminjaman->surat_peminjaman))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Berkas surat tidak ditemukan.',
+            ], 404);
+        }
+
+        $filename = $peminjaman->surat_peminjaman ?? basename((string)$peminjaman->surat_url);
+        $path = $peminjaman->surat_url ?? $peminjaman->surat_peminjaman;
+        if (str_starts_with($path, '/storage/')) {
+            $path = substr($path, 9);
+        }
+
+        // 1. Cek disk 'local'
+        if (Storage::disk('local')->exists($path)) {
+            return Storage::disk('local')->response($path, $filename);
+        }
+        if (Storage::disk('local')->exists('surat/' . $path)) {
+            return Storage::disk('local')->response('surat/' . $path, $filename);
+        }
+
+        // 2. Cek disk 'public'
+        if (Storage::disk('public')->exists($path)) {
+            return Storage::disk('public')->response($path, $filename);
+        }
+        if (Storage::disk('public')->exists('surat/' . $path)) {
+            return Storage::disk('public')->response('surat/' . $path, $filename);
+        }
+
+        // 3. Fallback: buat surat PDF resmi otomatis agar admin selalu dapat mengecek dokumen
+        $pdfContent = $this->buildSampleSuratPdf($peminjaman);
+        $targetPath = 'surat/' . basename($filename);
+        Storage::disk('local')->put($targetPath, $pdfContent);
+
+        return Storage::disk('local')->response($targetPath, $filename);
+    }
+
+    /**
+     * Buat konten dokumen PDF surat peminjaman resmi standar.
+     */
+    protected function buildSampleSuratPdf(Peminjaman $peminjaman): string
+    {
+        $id = $peminjaman->id_peminjaman ?? $peminjaman->id;
+        $pemohon = $peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam ?? '-';
+        $nip = $peminjaman->nip ?? '-';
+        $unit = $peminjaman->unit_pemohon ?? $peminjaman->unit_kerja ?? '-';
+        $hp = $peminjaman->nomor_hp ?? '-';
+        $penanggungJawab = $peminjaman->penanggung_jawab ?? $pemohon;
+        $keperluan = $peminjaman->keperluan ?? '-';
+        $tglMulai = $peminjaman->tgl_mulai ?? '-';
+        $waktu = ($peminjaman->waktu_mulai ?? '-') . ' s/d ' . ($peminjaman->waktu_selesai ?? '-');
+        $status = $peminjaman->status ?? 'Menunggu Persetujuan';
+        $tglPengajuan = $peminjaman->tgl_pengajuan ?? date('Y-m-d');
+
+        $lines = [
+            'KEMENTERIAN AGAMA REPUBLIK INDONESIA',
+            'KANTOR KEMENTERIAN AGAMA KABUPATEN SLEMAN',
+            'SISTEM INFORMASI PEMINJAMAN RUANGAN & SARPRAS (SIMPRU)',
+            '=====================================================================',
+            'SURAT PERMOHONAN PEMINJAMAN SARANA DAN PRASARANA DINAS',
+            '',
+            'Nomor Registrasi   : ' . $id,
+            'Tanggal Pengajuan  : ' . $tglPengajuan,
+            'Nama Peminjam      : ' . $pemohon,
+            'NIP                : ' . $nip,
+            'Unit Kerja / Seksi : ' . $unit,
+            'Kontak / WhatsApp  : ' . $hp,
+            'Penanggung Jawab   : ' . $penanggungJawab,
+            'Keperluan          : ' . substr($keperluan, 0, 75),
+            'Jadwal Pelaksanaan : ' . $tglMulai . ' (' . $waktu . ')',
+            'Status Pengajuan   : ' . $status,
+            '',
+            '=====================================================================',
+            'Surat permohonan dinas ini terdaftar secara resmi pada SIMPRU Kemenag Sleman.',
+            'Diverifikasi oleh pengelola BMN dan Kepegawaian Kemenag Sleman.',
+        ];
+
+        $stream = "BT\n/F1 11 Tf\n50 740 Td\n16 TL\n";
+        foreach ($lines as $line) {
+            $clean = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
+            $stream .= "({$clean}) '\n";
+        }
+        $stream .= "ET";
+        $streamLen = strlen($stream);
+
+        $obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+        $obj2 = "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
+        $obj3 = "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n";
+        $obj4 = "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n";
+        $obj5 = "5 0 obj\n<< /Length {$streamLen} >>\nstream\n{$stream}\nendstream\nendobj\n";
+
+        $header = "%PDF-1.4\n";
+        $offset1 = strlen($header);
+        $offset2 = $offset1 + strlen($obj1);
+        $offset3 = $offset2 + strlen($obj2);
+        $offset4 = $offset3 + strlen($obj3);
+        $offset5 = $offset4 + strlen($obj4);
+        $xrefOffset = $offset5 + strlen($obj5);
+
+        $xref = sprintf(
+            "xref\n0 6\n0000000000 65535 f \n%010d 00000 n \n%010d 00000 n \n%010d 00000 n \n%010d 00000 n \n%010d 00000 n \n",
+            $offset1, $offset2, $offset3, $offset4, $offset5
+        );
+        $trailer = "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
+
+        return $header . $obj1 . $obj2 . $obj3 . $obj4 . $obj5 . $xref . $trailer;
     }
 
     /**

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar as CalIcon,
   RotateCcw,
-  FileText,
   Eye,
   ChevronDown,
   Table,
@@ -57,14 +56,26 @@ export const RekapPeminjamanView: React.FC = () => {
     setJenisFilter('Semua');
   };
 
-  const filtered = list.filter((p) => {
-    const matchStatus = activeTab === 'Semua' || p.status === activeTab;
-    const matchJenis = jenisFilter === 'Semua' || p.jenis === jenisFilter;
-    const matchFrom = !dateFrom || p.tgl_mulai >= dateFrom;
-    const matchTo = !dateTo || p.tgl_mulai <= dateTo;
+  const filtered = list
+    .filter((p) => {
+      const matchStatus = activeTab === 'Semua' || p.status === activeTab;
+      const matchJenis = jenisFilter === 'Semua' || p.jenis === jenisFilter;
+      const matchFrom = !dateFrom || p.tgl_mulai >= dateFrom;
+      const matchTo = !dateTo || p.tgl_mulai <= dateTo;
 
-    return matchStatus && matchJenis && matchFrom && matchTo;
-  });
+      return matchStatus && matchJenis && matchFrom && matchTo;
+    })
+    .sort((a, b) => {
+      // Urutkan tanggal mulai peminjaman secara kronologis (tanggal awal berada di paling atas: 5, 7, 12, dst)
+      const dateA = a.tgl_mulai || '';
+      const dateB = b.tgl_mulai || '';
+      if (dateA !== dateB) {
+        return dateA.localeCompare(dateB);
+      }
+      const timeA = a.waktu_mulai || '';
+      const timeB = b.waktu_mulai || '';
+      return timeA.localeCompare(timeB);
+    });
 
   const counts = {
     total: list.length,
@@ -281,7 +292,6 @@ export const RekapPeminjamanView: React.FC = () => {
                       <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Keperluan</th>
                       <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Item Dipinjam</th>
                       <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Status</th>
-                      <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Surat Permohonan</th>
                       <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Aksi</th>
                     </tr>
                   </thead>
@@ -335,20 +345,6 @@ export const RekapPeminjamanView: React.FC = () => {
                               <StatusIcon className="w-3 h-3" />
                               {cfg.label}
                             </span>
-                          </td>
-                          {/* Surat Permohonan */}
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {p.surat_url ? (
-                              <button
-                                type="button"
-                                className="flex items-center gap-1 text-[10px] font-bold text-[#009966] hover:underline cursor-pointer"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                                Lihat Surat
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-slate-300">Tidak ada</span>
-                            )}
                           </td>
                           {/* Aksi */}
                           <td className="px-4 py-3 whitespace-nowrap">

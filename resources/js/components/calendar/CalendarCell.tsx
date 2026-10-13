@@ -1,6 +1,5 @@
 import React from 'react';
 import { MasterPeminjaman } from '../../types';
-import { formatTimeDisplay } from '../../utils/date';
 
 interface CalendarCellProps {
   dayNumber: number;

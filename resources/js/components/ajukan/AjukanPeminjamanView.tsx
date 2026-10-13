@@ -27,6 +27,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [form, setForm] = useState<FormPeminjamanState>({
     nip: '',
@@ -36,7 +37,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     mulai: '2026-10-15T08:00',
     selesai: '2026-10-15T15:00',
     keperluan: '',
-    surat_peminjaman_name: 'surat_permohonan.pdf',
+    surat_peminjaman_name: '',
     selected_items: [],
   });
 
@@ -116,11 +117,31 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const response = await axios.post('/api/peminjaman', {
-        ...form,
-        mulai: normalizeDate(form.mulai),
-        selesai: normalizeDate(form.selesai),
-      });
+      let response;
+      if (uploadedFile) {
+        const formData = new FormData();
+        formData.append('nip', form.nip);
+        formData.append('nama_peminjam', form.nama_peminjam);
+        formData.append('unit_kerja', form.unit_kerja);
+        if (form.nomor_hp) formData.append('nomor_hp', form.nomor_hp);
+        formData.append('mulai', normalizeDate(form.mulai));
+        formData.append('selesai', normalizeDate(form.selesai));
+        formData.append('keperluan', form.keperluan);
+        formData.append('surat_peminjaman_name', uploadedFile.name);
+        formData.append('surat_file', uploadedFile);
+        formData.append('selected_items', JSON.stringify(form.selected_items));
+
+        response = await axios.post('/api/peminjaman', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        response = await axios.post('/api/peminjaman', {
+          ...form,
+          surat_peminjaman_name: form.surat_peminjaman_name || null,
+          mulai: normalizeDate(form.mulai),
+          selesai: normalizeDate(form.selesai),
+        });
+      }
       setCreatedId(response.data?.data?.id_peminjaman || 'PMJ-SUCCESS');
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
@@ -173,7 +194,12 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
             {step === 4 && (
               <div className="space-y-4">
                 <StepUnggahSurat
-                  suratName={form.surat_peminjaman_name}
+                  suratName={uploadedFile ? uploadedFile.name : form.surat_peminjaman_name}
+                  file={uploadedFile}
+                  onFileSelect={(f) => {
+                    setUploadedFile(f);
+                    handleFieldChange('surat_peminjaman_name', f.name);
+                  }}
                   onFileChange={(fn) => handleFieldChange('surat_peminjaman_name', fn)}
                   nip={form.nip}
                   namaPeminjam={form.nama_peminjam}

@@ -6,7 +6,6 @@ import axios from 'axios';
 import { Ruangan, Kendaraan, Perlengkapan, Permohonan } from '../types/admin';
 import { CATEGORY_IDS } from '../constants';
 import {
-  ADMIN_CREDENTIALS,
   INITIAL_RUANGAN,
   INITIAL_KENDARAAN,
   INITIAL_PERLENGKAPAN,
@@ -15,18 +14,23 @@ import {
 
 const KEYS = {
   AUTH: 'simpru_admin_auth',
+  TOKEN: 'simpru_admin_token',
   RUANGAN: 'simpru_admin_ruangan_v2',
   KENDARAAN: 'simpru_admin_kendaraan_v2',
   PERLENGKAPAN: 'simpru_admin_perlengkapan_v2',
   PERMOHONAN: 'simpru_admin_permohonan_v2',
 };
 
-// Clean up old obsolete localStorage items
+// Clean up old obsolete localStorage items or contaminated masked cache
 try {
   localStorage.removeItem('simpru_admin_ruangan');
   localStorage.removeItem('simpru_admin_kendaraan');
   localStorage.removeItem('simpru_admin_perlengkapan');
   localStorage.removeItem('simpru_admin_permohonan');
+  const cachedPermohonan = localStorage.getItem(KEYS.PERMOHONAN);
+  if (cachedPermohonan && cachedPermohonan.includes('**')) {
+    localStorage.removeItem(KEYS.PERMOHONAN);
+  }
 } catch (e) {
   // Ignore
 }
@@ -48,17 +52,64 @@ function setStored<T>(key: string, value: T): void {
   }
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-export async function adminLogin(email: string, password: string): Promise<{ ok: boolean; message?: string }> {
-  if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
-    setStored(KEYS.AUTH, { email: ADMIN_CREDENTIALS.email, name: ADMIN_CREDENTIALS.name });
-    return { ok: true };
+export function getAdminToken(): string | null {
+  try {
+    return localStorage.getItem(KEYS.TOKEN);
+  } catch {
+    return null;
   }
-  return { ok: false, message: 'Email atau kata sandi salah.' };
 }
 
-export function adminLogout(): void {
-  localStorage.removeItem(KEYS.AUTH);
+export function setAdminToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(KEYS.TOKEN, token);
+    } else {
+      localStorage.removeItem(KEYS.TOKEN);
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const token = getAdminToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+export async function adminLogin(email: string, password: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await axios.post('/api/admin/login', { email, password });
+    if (res.data?.success && res.data?.token) {
+      setAdminToken(res.data.token);
+      const user = res.data.user || { email, name: 'Administrator Kemenag' };
+      setStored(KEYS.AUTH, user);
+      return { ok: true };
+    }
+    return { ok: false, message: res.data?.message || 'Login gagal.' };
+  } catch (err: unknown) {
+    const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
+    const msg = errorObj.response?.data?.message || errorObj.message || 'Email atau kata sandi salah.';
+    return { ok: false, message: msg };
+  }
+}
+
+export async function adminLogout(): Promise<void> {
+  try {
+    const token = getAdminToken();
+    if (token) {
+      await axios.post('/api/admin/logout', {}, {
+        headers: getAuthHeaders(),
+      });
+    }
+  } catch (err) {
+    console.warn('API logout failed:', err);
+  } finally {
+    setAdminToken(null);
+    localStorage.removeItem(KEYS.AUTH);
+    localStorage.removeItem(KEYS.PERMOHONAN);
+  }
 }
 
 export function getAdminSession(): { email: string; name: string } | null {
@@ -67,45 +118,72 @@ export function getAdminSession(): { email: string; name: string } | null {
 
 // ─── Permohonan (Database backed) ─────────────────────────────────────────────
 export async function getPermohonan(): Promise<Permohonan[]> {
-  try {
-    const res = await axios.get('/api/peminjaman');
-    if (res.data?.success && Array.isArray(res.data?.data)) {
-      setStored(KEYS.PERMOHONAN, res.data.data);
-      return res.data.data;
+  const token = getAdminToken();
+  if (token) {
+    try {
+      const res = await axios.get('/api/master/peminjaman', {
+        headers: getAuthHeaders(),
+      });
+      if (res.data?.success && Array.isArray(res.data?.data)) {
+        setStored(KEYS.PERMOHONAN, res.data.data);
+        return res.data.data;
+      }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) {
+        console.warn('Token admin tidak valid atau kedaluwarsa. Mengarahkan ke login ulang.');
+        setAdminToken(null);
+        localStorage.removeItem(KEYS.AUTH);
+        localStorage.removeItem(KEYS.PERMOHONAN);
+        window.location.reload();
+        return INITIAL_PERMOHONAN;
+      }
+      console.warn('API /api/master/peminjaman error, using cache:', err);
     }
-  } catch (err) {
-    console.warn('API /api/peminjaman unreachable, using synced cache:', err);
   }
-  return getStored<Permohonan[]>(KEYS.PERMOHONAN, INITIAL_PERMOHONAN);
+
+  // Gunakan data cache jika tidak ada token, namun bersihkan jika ada nama tersensor
+  const cached = getStored<Permohonan[]>(KEYS.PERMOHONAN, INITIAL_PERMOHONAN);
+  if (Array.isArray(cached) && cached.some((p) => p.nama_pemohon?.includes('**'))) {
+    setStored(KEYS.PERMOHONAN, INITIAL_PERMOHONAN);
+    return INITIAL_PERMOHONAN;
+  }
+  return cached;
 }
 
 export async function updateStatusPermohonan(
   id: string,
   status: Permohonan['status'],
 ): Promise<void> {
-  try {
-    await axios.patch(`/api/peminjaman/${encodeURIComponent(id)}/status`, {
+  const res = await axios.patch(
+    `/api/peminjaman/${encodeURIComponent(id)}/status`,
+    {
       status,
       petugas: 'Admin SiRuang',
-    });
-  } catch (err) {
-    console.warn('API /api/peminjaman/status unreachable, updating local state:', err);
+    },
+    {
+      headers: getAuthHeaders(),
+    }
+  );
+
+  if (res.data?.success === false) {
+    throw new Error(res.data?.message || 'Gagal memperbarui status di database.');
   }
 
+  // Hanya perbarui cache lokal JIKA request ke server database berhasil
   const list = getStored<Permohonan[]>(KEYS.PERMOHONAN, INITIAL_PERMOHONAN);
   const updated = list.map((p) => (p.id === id ? { ...p, status } : p));
   setStored(KEYS.PERMOHONAN, updated);
 }
 
 /**
- * Kirim DELETE item ke backend. Mengembalikan pesan penolakan kalau server
- * menolak (mis. 409 karena item sudah pernah dipinjam), atau null kalau boleh
- * dilanjutkan. Saat backend tidak terjangkau, dianggap boleh lanjut supaya
- * mode offline (localStorage) tidak ikut rusak.
+ * Kirim DELETE item ke backend dengan Bearer token.
  */
 async function tryDeleteItemApi(id: number, label: string): Promise<string | null> {
   try {
-    const res = await axios.delete(`/api/item/jenis/${id}`);
+    const res = await axios.delete(`/api/item/jenis/${id}`, {
+      headers: getAuthHeaders(),
+    });
     if (res.data?.success === false) {
       return res.data?.message || `Item gagal dihapus (${label}).`;
     }
@@ -116,7 +194,7 @@ async function tryDeleteItemApi(id: number, label: string): Promise<string | nul
       return response.data?.message || `Item gagal dihapus (${label}).`;
     }
     console.warn(`API error deleting ${label}:`, err);
-    return null;
+    throw err;
   }
 }
 
@@ -143,14 +221,18 @@ export async function getRuangan(): Promise<Ruangan[]> {
 
 export async function addRuangan(data: Omit<Ruangan, 'id'>): Promise<Ruangan> {
   try {
-    const res = await axios.post('/api/item/jenis', {
-      id_jenis: CATEGORY_IDS.RUANGAN,
-      nama: data.nama,
-      kapasitas: data.kapasitas,
-      fasilitas: data.fasilitas,
-      keterangan: data.fasilitas,
-      is_active: data.is_active,
-    });
+    const res = await axios.post(
+      '/api/item/jenis',
+      {
+        id_jenis: CATEGORY_IDS.RUANGAN,
+        nama: data.nama,
+        kapasitas: data.kapasitas,
+        fasilitas: data.fasilitas,
+        keterangan: data.fasilitas,
+        is_active: data.is_active,
+      },
+      { headers: getAuthHeaders() }
+    );
     if (res.data?.success && res.data?.data) {
       const item = res.data.data;
       const newRuangan: Ruangan = {
@@ -166,6 +248,7 @@ export async function addRuangan(data: Omit<Ruangan, 'id'>): Promise<Ruangan> {
     }
   } catch (err) {
     console.warn('API error adding ruangan:', err);
+    throw err;
   }
 
   const list = getStored<Ruangan[]>(KEYS.RUANGAN, INITIAL_RUANGAN);
@@ -185,16 +268,21 @@ export async function deleteRuangan(id: number): Promise<string | null> {
 
 export async function updateRuangan(id: number, data: Partial<Omit<Ruangan, 'id'>>): Promise<void> {
   try {
-    await axios.put(`/api/item/jenis/${id}`, {
-      id_jenis: CATEGORY_IDS.RUANGAN,
-      nama: data.nama,
-      kapasitas: data.kapasitas,
-      fasilitas: data.fasilitas,
-      keterangan: data.fasilitas,
-      is_active: data.is_active,
-    });
+    await axios.put(
+      `/api/item/jenis/${id}`,
+      {
+        id_jenis: CATEGORY_IDS.RUANGAN,
+        nama: data.nama,
+        kapasitas: data.kapasitas,
+        fasilitas: data.fasilitas,
+        keterangan: data.fasilitas,
+        is_active: data.is_active,
+      },
+      { headers: getAuthHeaders() }
+    );
   } catch (err) {
     console.warn('API error updating ruangan:', err);
+    throw err;
   }
   const list = getStored<Ruangan[]>(KEYS.RUANGAN, INITIAL_RUANGAN);
   const updated = list.map((r) => (r.id === id ? { ...r, ...data } : r));
@@ -225,14 +313,18 @@ export async function getKendaraan(): Promise<Kendaraan[]> {
 
 export async function addKendaraan(data: Omit<Kendaraan, 'id'>): Promise<Kendaraan> {
   try {
-    const res = await axios.post('/api/item/jenis', {
-      id_jenis: CATEGORY_IDS.KENDARAAN,
-      nama: data.nama,
-      registration_id: data.nopol,
-      kapasitas: data.kapasitas,
-      keterangan: data.keterangan,
-      is_active: data.is_active,
-    });
+    const res = await axios.post(
+      '/api/item/jenis',
+      {
+        id_jenis: CATEGORY_IDS.KENDARAAN,
+        nama: data.nama,
+        registration_id: data.nopol,
+        kapasitas: data.kapasitas,
+        keterangan: data.keterangan,
+        is_active: data.is_active,
+      },
+      { headers: getAuthHeaders() }
+    );
     if (res.data?.success && res.data?.data) {
       const item = res.data.data;
       const newKendaraan: Kendaraan = {
@@ -249,6 +341,7 @@ export async function addKendaraan(data: Omit<Kendaraan, 'id'>): Promise<Kendara
     }
   } catch (err) {
     console.warn('API error adding kendaraan:', err);
+    throw err;
   }
 
   const list = getStored<Kendaraan[]>(KEYS.KENDARAAN, INITIAL_KENDARAAN);
@@ -268,16 +361,21 @@ export async function deleteKendaraan(id: number): Promise<string | null> {
 
 export async function updateKendaraan(id: number, data: Partial<Omit<Kendaraan, 'id'>>): Promise<void> {
   try {
-    await axios.put(`/api/item/jenis/${id}`, {
-      id_jenis: CATEGORY_IDS.KENDARAAN,
-      nama: data.nama,
-      registration_id: data.nopol,
-      kapasitas: data.kapasitas,
-      keterangan: data.keterangan,
-      is_active: data.is_active,
-    });
+    await axios.put(
+      `/api/item/jenis/${id}`,
+      {
+        id_jenis: CATEGORY_IDS.KENDARAAN,
+        nama: data.nama,
+        registration_id: data.nopol,
+        kapasitas: data.kapasitas,
+        keterangan: data.keterangan,
+        is_active: data.is_active,
+      },
+      { headers: getAuthHeaders() }
+    );
   } catch (err) {
     console.warn('API error updating kendaraan:', err);
+    throw err;
   }
   const list = getStored<Kendaraan[]>(KEYS.KENDARAAN, INITIAL_KENDARAAN);
   const updated = list.map((k) => (k.id === id ? { ...k, ...data } : k));
@@ -308,14 +406,18 @@ export async function getPerlengkapan(): Promise<Perlengkapan[]> {
 
 export async function addPerlengkapan(data: Omit<Perlengkapan, 'id'>): Promise<Perlengkapan> {
   try {
-    const res = await axios.post('/api/item/jenis', {
-      id_jenis: CATEGORY_IDS.ALAT,
-      nama: data.nama,
-      registration_id: data.kode,
-      quantity: data.jumlah,
-      keterangan: data.keterangan,
-      is_active: data.is_active,
-    });
+    const res = await axios.post(
+      '/api/item/jenis',
+      {
+        id_jenis: CATEGORY_IDS.ALAT,
+        nama: data.nama,
+        registration_id: data.kode,
+        quantity: data.jumlah,
+        keterangan: data.keterangan,
+        is_active: data.is_active,
+      },
+      { headers: getAuthHeaders() }
+    );
     if (res.data?.success && res.data?.data) {
       const item = res.data.data;
       const newPerlengkapan: Perlengkapan = {
@@ -332,6 +434,7 @@ export async function addPerlengkapan(data: Omit<Perlengkapan, 'id'>): Promise<P
     }
   } catch (err) {
     console.warn('API error adding perlengkapan:', err);
+    throw err;
   }
 
   const list = getStored<Perlengkapan[]>(KEYS.PERLENGKAPAN, INITIAL_PERLENGKAPAN);
@@ -351,16 +454,21 @@ export async function deletePerlengkapan(id: number): Promise<string | null> {
 
 export async function updatePerlengkapan(id: number, data: Partial<Omit<Perlengkapan, 'id'>>): Promise<void> {
   try {
-    await axios.put(`/api/item/jenis/${id}`, {
-      id_jenis: CATEGORY_IDS.ALAT,
-      nama: data.nama,
-      registration_id: data.kode,
-      quantity: data.jumlah,
-      keterangan: data.keterangan,
-      is_active: data.is_active,
-    });
+    await axios.put(
+      `/api/item/jenis/${id}`,
+      {
+        id_jenis: CATEGORY_IDS.ALAT,
+        nama: data.nama,
+        registration_id: data.kode,
+        quantity: data.jumlah,
+        keterangan: data.keterangan,
+        is_active: data.is_active,
+      },
+      { headers: getAuthHeaders() }
+    );
   } catch (err) {
     console.warn('API error updating perlengkapan:', err);
+    throw err;
   }
   const list = getStored<Perlengkapan[]>(KEYS.PERLENGKAPAN, INITIAL_PERLENGKAPAN);
   const updated = list.map((p) => (p.id === id ? { ...p, ...data } : p));

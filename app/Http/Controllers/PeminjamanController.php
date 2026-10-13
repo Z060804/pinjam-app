@@ -9,6 +9,8 @@ use App\Models\ItemPeminjaman;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 
 class PeminjamanController extends Controller
@@ -75,10 +77,21 @@ class PeminjamanController extends Controller
             'items.*.jumlah' => 'required|integer|min:1',
         ]);
 
+        // Gabungkan jumlah item dengan ID yang sama sebelum pengecekan
+        $aggregated = [];
+        foreach ($request->input('items') as $item) {
+            $id = (int) $item['item_id'];
+            $qty = (int) $item['jumlah'];
+            if (!isset($aggregated[$id])) {
+                $aggregated[$id] = ['item_id' => $id, 'jumlah' => 0];
+            }
+            $aggregated[$id]['jumlah'] += $qty;
+        }
+
         $conflicts = $this->detectConflicts(
             $request->input('mulai'),
             $request->input('selesai'),
-            $request->input('items')
+            array_values($aggregated)
         );
 
         if (!empty($conflicts)) {
@@ -99,7 +112,26 @@ class PeminjamanController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        // Mendukung selected_items dalam bentuk array atau JSON string (dari FormData upload berkas)
+        if ($request->has('selected_items') && is_string($request->input('selected_items'))) {
+            $decoded = json_decode($request->input('selected_items'), true);
+            if (is_array($decoded)) {
+                $request->merge(['selected_items' => $decoded]);
+            }
+        } elseif (!$request->has('selected_items') && $request->has('items')) {
+            $rawItems = $request->input('items');
+            if (is_string($rawItems)) {
+                $decoded = json_decode($rawItems, true);
+                if (is_array($decoded)) {
+                    $rawItems = $decoded;
+                }
+            }
+            if (is_array($rawItems)) {
+                $request->merge(['selected_items' => $rawItems]);
+            }
+        }
+
+        $validator = Validator::make($request->all(), [
             'nip' => 'nullable|string|max:50',
             'nama_peminjam' => 'required|string|max:150',
             'unit_kerja' => 'required|string|max:150',
@@ -107,22 +139,78 @@ class PeminjamanController extends Controller
             'selesai' => 'required|date|after:mulai',
             'keperluan' => 'required|string',
             'surat_peminjaman_name' => 'nullable|string|max:255',
+            'surat_file' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:5120',
             'selected_items' => 'required|array|min:1',
-            'selected_items.*.item.id' => 'nullable|integer',
-            'selected_items.*.item_id' => 'nullable|integer',
-            'selected_items.*.jumlah' => 'nullable|integer',
             'nomor_hp' => 'nullable|string|max:30',
             'pihak_pemohon' => 'nullable|string|max:100',
+        ], [
+            'selected_items.required' => 'Pilih minimal satu sarana atau prasarana untuk dipinjam.',
+            'selected_items.min' => 'Pilih minimal satu sarana atau prasarana untuk dipinjam.',
+            'selesai.after' => 'Waktu selesai peminjaman harus setelah waktu mulai.',
+            'surat_file.max' => 'Ukuran berkas surat maksimal 5 MB.',
+            'surat_file.mimes' => 'Format berkas surat harus berupa PDF, DOC, DOCX, JPG, atau PNG.',
         ]);
 
-        $itemsPayload = array_map(function ($selected) {
-            $itemId = $selected['item']['id'] ?? $selected['item_id'] ?? null;
-            $jumlah = (int) ($selected['jumlah'] ?? 1);
-            return [
-                'item_id' => (int) $itemId,
-                'jumlah' => max(1, $jumlah),
-            ];
-        }, $validated['selected_items']);
+        $validator->after(function ($validator) use ($request) {
+            $selectedItems = $request->input('selected_items');
+            if (!is_array($selectedItems)) {
+                return;
+            }
+
+            $itemTotals = [];
+
+            foreach ($selectedItems as $index => $selected) {
+                if (!is_array($selected)) {
+                    $validator->errors()->add("selected_items.{$index}", "Format data item ke-" . ($index + 1) . " tidak valid.");
+                    continue;
+                }
+
+                $itemId = $selected['item']['id'] ?? $selected['item_id'] ?? null;
+                $jumlah = $selected['jumlah'] ?? 1;
+
+                if (empty($itemId) || !is_numeric($itemId)) {
+                    $validator->errors()->add("selected_items.{$index}.item_id", "ID item pada baris ke-" . ($index + 1) . " wajib diisi.");
+                    continue;
+                }
+
+                $exists = ItemJenis::where('id', (int) $itemId)->exists();
+                if (!$exists) {
+                    $validator->errors()->add("selected_items.{$index}.item_id", "Item dengan ID {$itemId} pada baris ke-" . ($index + 1) . " tidak ditemukan dalam master sarana prasarana.");
+                }
+
+                if (!is_numeric($jumlah) || (int) $jumlah < 1) {
+                    $validator->errors()->add("selected_items.{$index}.jumlah", "Jumlah peminjaman pada baris ke-" . ($index + 1) . " minimal 1 unit.");
+                } else {
+                    $idInt = (int) $itemId;
+                    $itemTotals[$idInt] = ($itemTotals[$idInt] ?? 0) + (int) $jumlah;
+                }
+            }
+
+            // Validasi total stok: jika item yang sama dikirim beberapa kali atau jumlah melebihi kapasitas stok
+            foreach ($itemTotals as $id => $totalQty) {
+                $itemModel = ItemJenis::find($id);
+                if ($itemModel && $totalQty > $itemModel->quantity) {
+                    $validator->errors()->add("selected_items", "Total jumlah yang diminta untuk {$itemModel->nama} ({$totalQty} unit) melebihi kapasitas/stok yang tersedia ({$itemModel->quantity} unit).");
+                }
+            }
+        });
+
+        $validated = $validator->validate();
+
+        // Gabungkan duplicate item IDs ke dalam satu baris payload
+        $aggregatedPayload = [];
+        foreach ($validated['selected_items'] as $selected) {
+            $itemId = (int) ($selected['item']['id'] ?? $selected['item_id'] ?? 0);
+            $jumlah = max(1, (int) ($selected['jumlah'] ?? 1));
+            if (!isset($aggregatedPayload[$itemId])) {
+                $aggregatedPayload[$itemId] = [
+                    'item_id' => $itemId,
+                    'jumlah' => 0,
+                ];
+            }
+            $aggregatedPayload[$itemId]['jumlah'] += $jumlah;
+        }
+        $itemsPayload = array_values($aggregatedPayload);
 
         // Check for schedule conflict
         $conflicts = $this->detectConflicts($validated['mulai'], $validated['selesai'], $itemsPayload);
@@ -135,7 +223,20 @@ class PeminjamanController extends Controller
             ], 422);
         }
 
-        return DB::transaction(function () use ($validated, $itemsPayload, $request) {
+        // Simpan file berkas surat jika ada yang diunggah secara nyata (ke disk private 'local')
+        $suratFilename = null;
+        $suratUrl = null;
+
+        if ($request->hasFile('surat_file')) {
+            $file = $request->file('surat_file');
+            $originalName = $file->getClientOriginalName();
+            $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $originalName);
+            $storedPath = $file->storeAs('surat', $safeName, 'local');
+            $suratFilename = $originalName;
+            $suratUrl = $storedPath;
+        }
+
+        return DB::transaction(function () use ($validated, $itemsPayload, $request, $suratFilename, $suratUrl) {
             $now = Carbon::now();
             $prefix = 'PMJ-' . $now->format('Ym') . '-';
 
@@ -171,8 +272,8 @@ class PeminjamanController extends Controller
                 'waktu_mulai' => strlen($validated['mulai']) >= 16 ? substr($validated['mulai'], 11, 5) : '08:00',
                 'waktu_selesai' => strlen($validated['selesai']) >= 16 ? substr($validated['selesai'], 11, 5) : '16:00',
                 'keperluan' => $validated['keperluan'],
-                'surat_peminjaman' => $validated['surat_peminjaman_name'] ?? 'surat_permohonan.pdf',
-                'surat_url' => $validated['surat_peminjaman_name'] ?? 'surat_permohonan.pdf',
+                'surat_peminjaman' => $suratFilename,
+                'surat_url' => $suratUrl,
                 'status' => 'Menunggu Persetujuan',
                 'petugas' => null,
             ]);

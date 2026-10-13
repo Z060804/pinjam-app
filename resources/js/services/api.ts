@@ -151,7 +151,7 @@ function resolveMockResponse(config: InternalAxiosRequestConfig): AxiosResponse 
       mulai: body.mulai,
       selesai: body.selesai,
       keperluan: body.keperluan,
-      surat_peminjaman: body.surat_peminjaman_name || 'surat_permohonan.pdf',
+      surat_peminjaman: body.surat_peminjaman_name || null,
       status: STATUS_PEMINJAMAN.MENUNGGU,
       petugas: null,
     };

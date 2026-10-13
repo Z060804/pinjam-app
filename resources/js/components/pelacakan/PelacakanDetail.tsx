@@ -81,9 +81,15 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
       </div>
 
       <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>Surat: <strong className="text-slate-700">{data.surat_peminjaman || '-'}</strong></span>
+          {(data.surat_terlampir || data.surat_peminjaman) ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+              {data.surat_peminjaman ? `Terlampir (${data.surat_peminjaman})` : 'Dokumen Terlampir'}
+            </span>
+          ) : (
+            <span className="text-slate-400 font-medium">Tidak dilampirkan</span>
+          )}
         </div>
         {data.petugas && (
           <div className="flex items-center gap-1.5">
@@ -91,6 +97,10 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
             <span>Petugas Verifikator: <strong className="text-slate-700">{data.petugas}</strong></span>
           </div>
         )}
+      </div>
+
+      <div className="text-[11px] text-slate-400 bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/50">
+        Data pemohon dan dokumen dinas dilindungi privasi. Informasi sensitif disamarkan pada tampilan pelacakan publik.
       </div>
     </div>
   );

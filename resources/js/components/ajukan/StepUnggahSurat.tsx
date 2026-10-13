@@ -3,7 +3,9 @@ import { UploadCloud, FileCheck, CheckCircle } from 'lucide-react';
 
 interface StepUnggahSuratProps {
   suratName: string;
-  onFileChange: (fileName: string) => void;
+  file?: File | null;
+  onFileChange?: (fileName: string) => void;
+  onFileSelect?: (file: File) => void;
   nip: string;
   namaPeminjam: string;
   mulai: string;
@@ -12,16 +14,23 @@ interface StepUnggahSuratProps {
 
 export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
   suratName,
+  file,
   onFileChange,
+  onFileSelect,
   nip,
   namaPeminjam,
   mulai,
   selesai,
 }) => {
-  const handleDummyUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onFileChange(file.name);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        alert('Ukuran berkas maksimal 5 MB.');
+        return;
+      }
+      onFileSelect?.(selectedFile);
+      onFileChange?.(selectedFile.name);
     }
   };
 
@@ -30,7 +39,7 @@ export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
       <div>
         <h3 className="text-base font-bold text-slate-900">4. Unggah Surat Permohonan &amp; Konfirmasi</h3>
         <p className="text-xs text-slate-500">
-          Lampirkan surat permohonan dinas bertanda tangan pimpinan unit kerja (format PDF).
+          Lampirkan surat permohonan dinas bertanda tangan pimpinan unit kerja (format PDF / Gambar / Dokumen).
         </p>
       </div>
 
@@ -39,20 +48,20 @@ export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
         <p className="text-xs font-semibold text-slate-700 mb-1">
           Pilih file surat permohonan peminjaman
         </p>
-        <p className="text-[11px] text-slate-400 mb-3">Format PDF, DOC, atau Scan (Maks. 5 MB)</p>
+        <p className="text-[11px] text-slate-400 mb-3">Format PDF, DOC, DOCX, JPG, atau PNG (Maks. 5 MB)</p>
         <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer shadow-xs">
           <span>Telusuri Dokumen</span>
           <input
             type="file"
-            accept=".pdf,.doc,.docx,.jpg,.png"
-            onChange={handleDummyUpload}
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            onChange={handleFileUpload}
             className="hidden"
           />
         </label>
         {suratName && (
           <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-mono font-medium">
             <FileCheck className="w-4 h-4 text-emerald-600" />
-            <span>{suratName}</span>
+            <span>{suratName} {file ? `(${(file.size / 1024).toFixed(0)} KB)` : ''}</span>
           </div>
         )}
       </div>

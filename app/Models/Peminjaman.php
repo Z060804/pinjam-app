@@ -70,10 +70,11 @@ class Peminjaman extends Model
                 $model->attributes['unit_kerja'] = $unit;
             }
 
-            $surat = $model->attributes['surat_url'] ?? $model->attributes['surat_peminjaman'] ?? null;
-            if ($surat) {
-                $model->attributes['surat_url'] = $surat;
-                $model->attributes['surat_peminjaman'] = $surat;
+            if (empty($model->attributes['surat_peminjaman']) && !empty($model->attributes['surat_url'])) {
+                $model->attributes['surat_peminjaman'] = $model->attributes['surat_url'];
+            }
+            if (empty($model->attributes['surat_url']) && !empty($model->attributes['surat_peminjaman'])) {
+                $model->attributes['surat_url'] = $model->attributes['surat_peminjaman'];
             }
 
             if (empty($model->attributes['mulai']) && !empty($model->attributes['tgl_mulai'])) {
@@ -173,7 +174,9 @@ class Peminjaman extends Model
     public function setSuratPeminjamanAttribute($value)
     {
         $this->attributes['surat_peminjaman'] = $value;
-        $this->attributes['surat_url'] = $value;
+        if (!isset($this->attributes['surat_url'])) {
+            $this->attributes['surat_url'] = $value;
+        }
     }
 
     public function getSuratUrlAttribute()
@@ -184,7 +187,9 @@ class Peminjaman extends Model
     public function setSuratUrlAttribute($value)
     {
         $this->attributes['surat_url'] = $value;
-        $this->attributes['surat_peminjaman'] = $value;
+        if (!isset($this->attributes['surat_peminjaman'])) {
+            $this->attributes['surat_peminjaman'] = $value;
+        }
     }
 
     public function getMulaiAttribute()

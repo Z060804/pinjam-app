@@ -34,6 +34,7 @@ export interface Permohonan {
   pihak_pemohon: string; // e.g. "Internal Kemenag Sleman"
   unit_pemohon: string;
   nama_pemohon: string;
+  nip?: string;
   nomor_hp: string;
   penanggung_jawab: string;
   jumlah_peserta: number;
@@ -45,6 +46,7 @@ export interface Permohonan {
   kegiatan: string;
   status: 'Menunggu Persetujuan' | 'Disetujui' | 'Tidak Disetujui' | 'Dibatalkan';
   surat_url: string | null;
+  surat_peminjaman?: string | null;
   // generic: for perlengkapan / kendaraan booking
   jenis: 'ruangan' | 'kendaraan' | 'perlengkapan';
   item_dipinjam: string; // nama item

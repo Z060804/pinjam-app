@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, XCircle, Ban, FileText, ExternalLink, Copy, Check, Hash } from 'lucide-react';
+import axios from 'axios';
+import { X, CheckCircle2, XCircle, Ban, FileText, ExternalLink, Copy, Check, Hash, AlertTriangle } from 'lucide-react';
 import { Permohonan } from '../../types/admin';
-import { updateStatusPermohonan } from '../../services/adminApi';
+import { updateStatusPermohonan, getAdminToken } from '../../services/adminApi';
 import { STATUS_CONFIG } from './statusConfig';
 import { formatDate } from '../../utils/format';
 
@@ -19,6 +20,8 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
   onStatusUpdated,
 }) => {
   const [updating, setUpdating] = useState(false);
+  const [openingSurat, setOpeningSurat] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const cfg = STATUS_CONFIG[permohonan.status];
   const StatusIcon = cfg.icon;
@@ -31,11 +34,41 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
     }
   };
 
+  const handleOpenSurat = async () => {
+    if (!permohonan.surat_url) return;
+    if (permohonan.surat_url.startsWith('http')) {
+      window.open(permohonan.surat_url, '_blank');
+      return;
+    }
+    setOpeningSurat(true);
+    try {
+      const token = getAdminToken();
+      const res = await axios.get(`/api/peminjaman/${encodeURIComponent(permohonan.id)}/surat`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        responseType: 'blob',
+      });
+      const contentType = res.headers['content-type'];
+      const blobType = typeof contentType === 'string' ? contentType : 'application/pdf';
+      const fileBlob = new Blob([res.data], { type: blobType });
+      const fileUrl = window.URL.createObjectURL(fileBlob);
+      window.open(fileUrl, '_blank');
+    } catch {
+      alert('Gagal membuka berkas surat: akses ditolak atau berkas tidak ditemukan.');
+    } finally {
+      setOpeningSurat(false);
+    }
+  };
+
   const handleChangeStatus = async (status: Permohonan['status']) => {
     setUpdating(true);
+    setStatusError(null);
     try {
       await updateStatusPermohonan(permohonan.id, status);
       onStatusUpdated(permohonan.id, status);
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = errorObj.response?.data?.message || errorObj.message || 'Gagal memperbarui status di server database.';
+      setStatusError(msg);
     } finally {
       setUpdating(false);
     }
@@ -105,6 +138,16 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
         </div>
 
         <div className="px-6 py-4 space-y-5">
+          {statusError && (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Pembaruan Status Gagal</p>
+                <p className="leading-relaxed font-medium">{statusError}</p>
+              </div>
+            </div>
+          )}
+
           {/* Status badge + action */}
           <div className="flex items-center justify-between">
             <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full ${cfg.bg} ${cfg.color}`}>
@@ -165,6 +208,10 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
                 <p className="text-sm font-semibold text-slate-700">{permohonan.nama_pemohon}</p>
               </div>
               <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase">NIP Peminjam</p>
+                <p className="text-sm font-semibold text-slate-700">{permohonan.nip || '-'}</p>
+              </div>
+              <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase">Nomor WhatsApp / HP</p>
                 <p className="text-sm font-semibold text-slate-700">{permohonan.nomor_hp || '-'}</p>
               </div>
@@ -203,20 +250,29 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
           </div>
 
           {/* Surat Permohonan */}
-          {permohonan.surat_url && (
+          {(permohonan.surat_url || permohonan.surat_peminjaman) ? (
             <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200/80 rounded-xl px-4 py-3">
               <FileText className="w-5 h-5 text-[#009966] shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-slate-700 truncate">{permohonan.surat_url}</p>
-                <p className="text-[10px] text-slate-400">Surat Permohonan Dinas</p>
+                <p className="text-xs font-bold text-slate-800 truncate">
+                  {permohonan.surat_peminjaman || permohonan.surat_url}
+                </p>
+                <p className="text-[10px] text-slate-500">Berkas Surat Permohonan Dinas Terlampir</p>
               </div>
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs font-bold text-[#009966] hover:underline cursor-pointer"
+                disabled={openingSurat}
+                onClick={handleOpenSurat}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-[#009966] text-white hover:bg-[#008055] rounded-lg transition cursor-pointer disabled:opacity-50 shadow-xs"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Buka
+                {openingSurat ? 'Membuka...' : 'Buka & Cek Surat'}
               </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-500 text-xs">
+              <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+              <span>Surat Permohonan Tidak Dilampirkan</span>
             </div>
           )}
         </div>

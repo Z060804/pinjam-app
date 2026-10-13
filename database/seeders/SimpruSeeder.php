@@ -7,6 +7,8 @@ use App\Models\MasterJenis;
 use App\Models\Peminjaman;
 use App\Models\PeminjamanItem;
 use App\Models\ItemPeminjaman;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Seeder;
 
 class SimpruSeeder extends Seeder
@@ -16,6 +18,32 @@ class SimpruSeeder extends Seeder
      */
     public function run(): void
     {
+        // 0. Admin User (Secure Provisioning - tidak menimpa kredensial jika sudah ada)
+        $adminEmail = env('ADMIN_DEFAULT_EMAIL', env('ADMIN_EMAIL', 'admin@kemenag.go.id'));
+        $adminPassword = env('ADMIN_DEFAULT_PASSWORD', env('ADMIN_PASSWORD'));
+
+        $existingAdmin = User::where('email', $adminEmail)->first();
+        if (!$existingAdmin) {
+            $isDev = app()->isLocal() || app()->runningUnitTests();
+            $initialPassword = $adminPassword ?: ($isDev ? 'admin123' : \Illuminate\Support\Str::random(16));
+            User::create([
+                'name' => env('ADMIN_DEFAULT_NAME', 'Administrator Kemenag'),
+                'email' => $adminEmail,
+                'password' => Hash::make($initialPassword),
+            ]);
+
+            if ($this->command) {
+                if (!$adminPassword && !$isDev) {
+                    $this->command->warn("Akun admin baru dibuat dengan password acak: {$initialPassword}");
+                    $this->command->warn("PENTING: Simpan password ini atau setel ADMIN_PASSWORD di file .env sebelum menjalankan seeder.");
+                } else {
+                    $this->command->info("Akun admin berhasil dibuat ({$adminEmail}).");
+                }
+            }
+        } elseif ($this->command) {
+            $this->command->info("Akun admin {$adminEmail} sudah terdaftar. Kredensial yang ada tetap dipertahankan.");
+        }
+
         // 1. Master Jenis
         $ruanganJenis = MasterJenis::updateOrCreate(['id' => 1], ['nama' => 'Ruangan']);
         $kendaraanJenis = MasterJenis::updateOrCreate(['id' => 2], ['nama' => 'Kendaraan']);

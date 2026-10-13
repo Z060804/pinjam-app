@@ -5,7 +5,7 @@ import { RekapPeminjamanView } from './RekapPeminjamanView';
 import { DataRuanganView } from './DataRuanganView';
 import { DataKendaraanView } from './DataKendaraanView';
 import { DataPerlengkapanView } from './DataPerlengkapanView';
-import { getAdminSession, adminLogout } from '../../services/adminApi';
+import { getAdminSession, getAdminToken, adminLogout } from '../../services/adminApi';
 import { AdminActiveTab } from '../../types/admin';
 
 export const AdminApp: React.FC = () => {
@@ -14,9 +14,15 @@ export const AdminApp: React.FC = () => {
   const [booting, setBooting] = useState(true);
 
   useEffect(() => {
-    // Check existing session
+    // Check existing session and valid Sanctum token
     const existing = getAdminSession();
-    setSession(existing);
+    const token = getAdminToken();
+    if (existing && token) {
+      setSession(existing);
+    } else {
+      adminLogout();
+      setSession(null);
+    }
     setBooting(false);
   }, []);
 

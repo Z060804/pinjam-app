@@ -35,8 +35,11 @@ export interface MasterPeminjaman {
   kegiatan?: string;
   surat_peminjaman: string | null;
   surat_url?: string | null;
+  surat_terlampir?: boolean;
   status: string;
   petugas: string | null;
+  nomor_hp?: string | null;
+  penanggung_jawab?: string | null;
   item_dipinjam?: string;
   ruangan?: string;
   jenis?: 'ruangan' | 'kendaraan' | 'perlengkapan' | string;
