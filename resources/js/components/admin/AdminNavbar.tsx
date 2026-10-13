@@ -71,10 +71,10 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
           <div className="flex items-center gap-3 shrink-0">
             <a
               href="/"
-              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-[#009966] hover:bg-emerald-50 border border-slate-200 transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-[#009966] hover:bg-emerald-50 border border-slate-200 transition-all cursor-pointer"
               title="Kunjungi Portal Publik"
             >
-              <Globe className="w-3.5 h-3.5 text-slate-400" />
+              <Globe className="w-3.5 h-3.5 text-slate-500" />
               Portal Publik
             </a>
             <div className="hidden sm:block text-right">

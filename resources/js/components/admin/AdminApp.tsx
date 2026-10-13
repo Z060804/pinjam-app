@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { AdminLogin } from './AdminLogin';
 import { AdminNavbar } from './AdminNavbar';
 import { RekapPeminjamanView } from './RekapPeminjamanView';
 import { DataRuanganView } from './DataRuanganView';
 import { DataKendaraanView } from './DataKendaraanView';
 import { DataPerlengkapanView } from './DataPerlengkapanView';
-import { getAdminSession, getAdminToken, adminLogout } from '../../services/adminApi';
+import { getAdminSession, getAdminToken, adminLogout, getAuthHeaders } from '../../services/adminApi';
 import { AdminActiveTab } from '../../types/admin';
 
 export const AdminApp: React.FC = () => {
@@ -14,16 +15,50 @@ export const AdminApp: React.FC = () => {
   const [booting, setBooting] = useState(true);
 
   useEffect(() => {
-    // Check existing session and valid Sanctum token
-    const existing = getAdminSession();
-    const token = getAdminToken();
-    if (existing && token) {
-      setSession(existing);
-    } else {
-      adminLogout();
-      setSession(null);
-    }
-    setBooting(false);
+    let isMounted = true;
+    const verifySession = async () => {
+      const existing = getAdminSession();
+      const token = getAdminToken();
+
+      if (!existing || !token) {
+        if (isMounted) {
+          adminLogout();
+          setSession(null);
+          setBooting(false);
+        }
+        return;
+      }
+
+      // Verifikasi token aktif langsung ke server Laravel (/api/admin/me)
+      try {
+        const res = await axios.get('/api/admin/me', {
+          headers: getAuthHeaders(),
+        });
+        if (isMounted) {
+          if (res.data?.success && res.data?.user) {
+            setSession(res.data.user);
+          } else {
+            adminLogout();
+            setSession(null);
+          }
+        }
+      } catch {
+        if (isMounted) {
+          adminLogout();
+          setSession(null);
+        }
+      } finally {
+        if (isMounted) {
+          setBooting(false);
+        }
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleLoginSuccess = () => {
