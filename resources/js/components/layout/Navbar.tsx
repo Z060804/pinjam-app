@@ -1,24 +1,39 @@
 import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ActiveTab } from '../../types';
 import { Building2, Calendar, FilePlus2, Search, Menu, X, Landmark } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: ActiveTab;
-  onTabChange: (tab: ActiveTab) => void;
+  activeTab?: ActiveTab;
+  onTabChange?: (tab: ActiveTab) => void;
 }
 
 const navItems = [
-  { key: 'beranda' as ActiveTab, label: 'Beranda', icon: Landmark },
-  { key: 'ketersediaan' as ActiveTab, label: 'Ketersediaan & Kalender', icon: Calendar },
-  { key: 'ajukan' as ActiveTab, label: 'Ajukan Peminjaman', icon: FilePlus2 },
-  { key: 'pelacakan' as ActiveTab, label: 'Pelacakan', icon: Search },
+  { key: 'beranda' as ActiveTab, path: '/', label: 'Beranda', icon: Landmark },
+  { key: 'ketersediaan' as ActiveTab, path: '/ketersediaan', label: 'Ketersediaan & Kalender', icon: Calendar },
+  { key: 'ajukan' as ActiveTab, path: '/pengajuan', label: 'Ajukan Peminjaman', icon: FilePlus2 },
+  { key: 'pelacakan' as ActiveTab, path: '/pelacakan', label: 'Pelacakan', icon: Search },
 ];
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab: propActiveTab, onTabChange }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const handleSelect = (tab: ActiveTab) => {
-    onTabChange(tab);
+  const getActiveTab = (): ActiveTab => {
+    const p = location.pathname;
+    if (p.startsWith('/ketersediaan')) return 'ketersediaan';
+    if (p.startsWith('/pengajuan') || p.startsWith('/ajukan')) return 'ajukan';
+    if (p.startsWith('/pelacakan')) return 'pelacakan';
+    if (p === '/') return 'beranda';
+    return propActiveTab ?? 'beranda';
+  };
+
+  const currentTab = getActiveTab();
+
+  const handleSelect = (tab: ActiveTab, path: string) => {
+    if (onTabChange) onTabChange(tab);
+    navigate(path);
     setMobileMenuOpen(false);
   };
 
@@ -28,7 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
         <div className="flex items-center justify-between h-16">
           <button
             type="button"
-            onClick={() => handleSelect('beranda')}
+            onClick={() => handleSelect('beranda', '/')}
             className="flex items-center gap-3 text-left group cursor-pointer"
           >
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#009966] flex items-center justify-center border border-emerald-100 group-hover:scale-105 transition-transform">
@@ -46,16 +61,16 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
           </button>
 
           <nav className="hidden md:flex items-center gap-1">
-            {navItems.map(({ key, label, icon: Icon }) => (
+            {navItems.map(({ key, path, label, icon: Icon }) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => handleSelect(key)}
+                onClick={() => handleSelect(key, path)}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                  activeTab === key ? 'bg-emerald-50 text-[#009966] shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  currentTab === key ? 'bg-emerald-50 text-[#009966] shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${activeTab === key ? 'text-[#009966]' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 ${currentTab === key ? 'text-[#009966]' : 'text-slate-400'}`} />
                 {label}
               </button>
             ))}
@@ -76,13 +91,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-2 pb-4 space-y-1 shadow-lg">
-          {navItems.map(({ key, label, icon: Icon }) => (
+          {navItems.map(({ key, path, label, icon: Icon }) => (
             <button
               key={key}
               type="button"
-              onClick={() => handleSelect(key)}
+              onClick={() => handleSelect(key, path)}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium ${
-                activeTab === key ? 'bg-emerald-50 text-[#009966]' : 'text-slate-700 hover:bg-slate-50'
+                currentTab === key ? 'bg-emerald-50 text-[#009966]' : 'text-slate-700 hover:bg-slate-50'
               }`}
             >
               <Icon className="w-4 h-4" />

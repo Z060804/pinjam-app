@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../services/api';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { PeminjamanFull } from '../../types';
 import { useDebounce } from '../../hooks/useDebounce';
 import { PelacakanSearch } from './PelacakanSearch';
@@ -13,7 +14,12 @@ interface PelacakanViewProps {
 }
 
 export const PelacakanView: React.FC<PelacakanViewProps> = ({ initialSearchId = '' }) => {
-  const [searchId, setSearchId] = useState<string>(initialSearchId);
+  const { id: paramId } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
+  const queryId = searchParams.get('id') ?? searchParams.get('kode');
+  const resolvedInitialId = paramId ?? queryId ?? initialSearchId;
+
+  const [searchId, setSearchId] = useState<string>(resolvedInitialId);
   const [result, setResult] = useState<PeminjamanFull | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [notFound, setNotFound] = useState<boolean>(false);
@@ -21,10 +27,10 @@ export const PelacakanView: React.FC<PelacakanViewProps> = ({ initialSearchId = 
   const debouncedSearchId = useDebounce(searchId.trim(), DEBOUNCE_DELAY_MS);
 
   useEffect(() => {
-    if (initialSearchId) {
-      setSearchId(initialSearchId);
+    if (resolvedInitialId) {
+      setSearchId(resolvedInitialId);
     }
-  }, [initialSearchId]);
+  }, [resolvedInitialId]);
 
   useEffect(() => {
     if (!debouncedSearchId) {

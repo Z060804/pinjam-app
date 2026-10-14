@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../services/api';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ItemJenis, MasterJenis, FormPeminjamanState } from '../../types';
 import { StepIndicator } from './StepIndicator';
 import { StepPilihItem } from './StepPilihItem';
@@ -13,16 +14,22 @@ import { submitPeminjaman } from './ajukanSubmit';
 import { AlertTriangle } from 'lucide-react';
 
 interface AjukanPeminjamanViewProps {
-  preSelectedItem: ItemJenis | null;
-  onTrackRedirect: (id: string) => void;
-  onHomeRedirect: () => void;
+  preSelectedItem?: ItemJenis | null;
+  onTrackRedirect?: (id: string) => void;
+  onHomeRedirect?: () => void;
 }
 
 export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
-  preSelectedItem,
+  preSelectedItem = null,
   onTrackRedirect,
   onHomeRedirect,
 }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const locationState = location.state as { preSelectedItem?: ItemJenis; item?: ItemJenis } | null;
+  const stateItem = locationState?.preSelectedItem ?? locationState?.item ?? null;
+  const initialSelected = preSelectedItem ?? stateItem;
   const [step, setStep] = useState<number>(1);
   const [items, setItems] = useState<ItemJenis[]>([]);
   const [categories, setCategories] = useState<MasterJenis[]>([]);
@@ -30,6 +37,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormPeminjamanState>({
     nip: '',
@@ -60,13 +68,24 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   }, []);
 
   useEffect(() => {
-    if (preSelectedItem) {
+    if (initialSelected) {
       setForm((prev) => ({
         ...prev,
-        selected_items: [{ item: preSelectedItem, jumlah: 1 }],
+        selected_items: [{ item: initialSelected, jumlah: 1 }],
       }));
+    } else {
+      const itemIdParam = searchParams.get('item_id');
+      if (itemIdParam && items.length > 0) {
+        const found = items.find((it) => it.id === Number(itemIdParam));
+        if (found) {
+          setForm((prev) => ({
+            ...prev,
+            selected_items: [{ item: found, jumlah: 1 }],
+          }));
+        }
+      }
     }
-  }, [preSelectedItem]);
+  }, [initialSelected, searchParams, items]);
 
   const handleToggleItem = (item: ItemJenis, jumlah: number) => {
     setErrorMessage(null);
@@ -103,10 +122,29 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     if (step === 3) {
       return Boolean(form.mulai && form.selesai && form.keperluan.trim() && new Date(form.selesai) > new Date(form.mulai));
     }
+    if (step === 4) {
+      if (fileError) return false;
+      return true;
+    }
     return true;
   };
 
   const handleSubmit = async () => {
+    if (fileError) {
+      setErrorMessage(fileError);
+      return;
+    }
+    if (uploadedFile) {
+      if (!uploadedFile.name.toLowerCase().endsWith('.pdf')) {
+        setErrorMessage('Format berkas surat permohonan harus berupa PDF (.pdf).');
+        return;
+      }
+      if (uploadedFile.size > 1048576) {
+        setErrorMessage('Ukuran berkas surat permohonan melebihi batas maksimal 1 MB (1.048.576 byte).');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
@@ -165,11 +203,13 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 <StepUnggahSurat
                   suratName={uploadedFile ? uploadedFile.name : form.surat_peminjaman_name}
                   file={uploadedFile}
+                  fileError={fileError}
                   onFileSelect={(f) => {
                     setUploadedFile(f);
-                    setForm((prev) => ({ ...prev, surat_peminjaman_name: f.name }));
+                    setForm((prev) => ({ ...prev, surat_peminjaman_name: f ? f.name : '' }));
                   }}
                   onFileChange={(fn) => setForm((prev) => ({ ...prev, surat_peminjaman_name: fn }))}
+                  onErrorChange={(err) => setFileError(err)}
                   nip={form.nip}
                   namaPeminjam={form.nama_peminjam}
                   mulai={form.mulai}
@@ -207,8 +247,14 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
       {createdId && (
         <SuccessModal
           idPeminjaman={createdId}
-          onTrack={onTrackRedirect}
-          onClose={onHomeRedirect}
+          onTrack={(id) => {
+            if (onTrackRedirect) onTrackRedirect(id);
+            navigate(`/pelacakan?id=${encodeURIComponent(id)}`);
+          }}
+          onClose={() => {
+            if (onHomeRedirect) onHomeRedirect();
+            navigate('/');
+          }}
         />
       )}
     </div>

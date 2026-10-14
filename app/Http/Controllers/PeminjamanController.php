@@ -139,7 +139,7 @@ class PeminjamanController extends Controller
             'selesai' => 'required|date|after:mulai',
             'keperluan' => 'required|string',
             'surat_peminjaman_name' => 'nullable|string|max:255',
-            'surat_file' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:5120',
+            'surat_file' => 'nullable|file|mimes:pdf|max:1024',
             'selected_items' => 'required|array|min:1',
             'nomor_hp' => 'nullable|string|max:30',
             'pihak_pemohon' => 'nullable|string|max:100',
@@ -147,11 +147,49 @@ class PeminjamanController extends Controller
             'selected_items.required' => 'Pilih minimal satu sarana atau prasarana untuk dipinjam.',
             'selected_items.min' => 'Pilih minimal satu sarana atau prasarana untuk dipinjam.',
             'selesai.after' => 'Waktu selesai peminjaman harus setelah waktu mulai.',
-            'surat_file.max' => 'Ukuran berkas surat maksimal 5 MB.',
-            'surat_file.mimes' => 'Format berkas surat harus berupa PDF, DOC, DOCX, JPG, atau PNG.',
+            'surat_file.file' => 'Berkas surat permohonan harus berupa file yang valid.',
+            'surat_file.mimes' => 'Format berkas surat permohonan harus berupa dokumen PDF (.pdf).',
+            'surat_file.max' => 'Ukuran berkas surat permohonan maksimal 1 MB (1.048.576 byte).',
         ]);
 
         $validator->after(function ($validator) use ($request) {
+            // Validasi integritas berkas surat: wajib dokumen PDF valid dan ukuran <= 1 MB (1.048.576 byte)
+            if ($request->hasFile('surat_file')) {
+                $file = $request->file('surat_file');
+                if ($file) {
+                    if (!$file->isValid()) {
+                        $validator->errors()->add('surat_file', 'Unggahan berkas surat gagal atau berkas rusak.');
+                    } else {
+                        // Batasi ukuran riil maksimal 1 MB (1.048.576 byte)
+                        if ($file->getSize() > 1048576) {
+                            $validator->errors()->add('surat_file', 'Ukuran berkas surat permohonan melebihi batas maksimal 1 MB (1.048.576 byte).');
+                        }
+
+                        // Periksa MIME type asli via PHP finfo
+                        $realPath = $file->getRealPath();
+                        if ($realPath && file_exists($realPath)) {
+                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                            $mime = finfo_file($finfo, $realPath);
+                            finfo_close($finfo);
+
+                            if (!in_array($mime, ['application/pdf', 'application/x-pdf', 'application/acrobat'])) {
+                                $validator->errors()->add('surat_file', 'Format berkas surat tidak sah. Berkas harus berupa dokumen PDF yang sebenarnya.');
+                            } else {
+                                // Periksa magic header signature PDF (%PDF-)
+                                $handle = @fopen($realPath, 'rb');
+                                if ($handle) {
+                                    $header = fread($handle, 1024);
+                                    fclose($handle);
+                                    if (!str_contains($header, '%PDF-')) {
+                                        $validator->errors()->add('surat_file', 'Struktur berkas tidak valid sebagai dokumen PDF.');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             $selectedItems = $request->input('selected_items');
             if (!is_array($selectedItems)) {
                 return;

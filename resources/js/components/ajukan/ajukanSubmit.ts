@@ -10,6 +10,9 @@ export const submitPeminjaman = async (
   uploadedFile: File | null
 ): Promise<string> => {
   if (uploadedFile) {
+    if (!uploadedFile.name.toLowerCase().endsWith('.pdf') || uploadedFile.size > 1048576) {
+      throw new Error('Berkas surat permohonan harus berformat PDF (.pdf) dengan ukuran maksimal 1 MB (1.048.576 byte).');
+    }
     const formData = new FormData();
     formData.append('nip', form.nip);
     formData.append('nama_peminjam', form.nama_peminjam);

@@ -163,7 +163,7 @@ class AdminAuthAndWorkflowTest extends TestCase
     {
         Storage::fake('local');
         $item = ItemJenis::first();
-        $fakeFile = UploadedFile::fake()->create('surat_dinas.pdf', 150, 'application/pdf');
+        $fakeFile = UploadedFile::fake()->createWithContent('surat_dinas.pdf', "%PDF-1.4\n" . str_repeat('A', 1024 * 50));
 
         $response = $this->post('/api/peminjaman', [
             'nip' => '198001012010011001',
@@ -329,7 +329,7 @@ class AdminAuthAndWorkflowTest extends TestCase
     public function test_surat_endpoint_requires_admin_authorization(): void
     {
         Storage::fake('local');
-        $fakeFile = UploadedFile::fake()->create('dokumen_rahasia.pdf', 100, 'application/pdf');
+        $fakeFile = UploadedFile::fake()->createWithContent('dokumen_rahasia.pdf', "%PDF-1.4\n" . str_repeat('A', 1024 * 50));
         $item = ItemJenis::first();
 
         $createRes = $this->post('/api/peminjaman', [

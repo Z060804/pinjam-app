@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../services/api';
+import { useSearchParams } from 'react-router-dom';
 import { MasterJenis, ItemJenis, MasterPeminjaman } from '../../types';
 import { ItemFilterTabs } from './ItemFilterTabs';
 import { ItemCard } from './ItemCard';
@@ -9,24 +10,30 @@ import { Info, AlertCircle } from 'lucide-react';
 import { STATUS_PEMINJAMAN } from '../../constants';
 
 interface KetersediaanViewProps {
-  initialCategoryId: number | null;
+  initialCategoryId?: number | null;
   onBookItem: (item: ItemJenis) => void;
 }
 
 export const KetersediaanView: React.FC<KetersediaanViewProps> = ({
-  initialCategoryId,
+  initialCategoryId = null,
   onBookItem,
 }) => {
+  const [searchParams] = useSearchParams();
+  const categoryParam = searchParams.get('kategori') ?? searchParams.get('category');
+  const resolvedCategory = categoryParam ? Number(categoryParam) : initialCategoryId;
+
   const [categories, setCategories] = useState<MasterJenis[]>([]);
   const [items, setItems] = useState<ItemJenis[]>([]);
   const [peminjamanList, setPeminjamanList] = useState<MasterPeminjaman[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(initialCategoryId);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(resolvedCategory);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
-    setSelectedCategory(initialCategoryId);
-  }, [initialCategoryId]);
+    if (resolvedCategory !== undefined) {
+      setSelectedCategory(resolvedCategory);
+    }
+  }, [resolvedCategory]);
 
   useEffect(() => {
     const fetchData = async () => {

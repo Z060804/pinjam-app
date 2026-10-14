@@ -1,13 +1,24 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AdminActiveTab } from '../../types/admin';
 
 interface AdminFooterProps {
-  onSelectTab: (tab: AdminActiveTab) => void;
+  onSelectTab?: (tab: AdminActiveTab) => void;
 }
 
+const tabToAdminPath: Record<AdminActiveTab, string> = {
+  rekap: '/admin/rekap',
+  ruangan: '/admin/ruangan',
+  kendaraan: '/admin/kendaraan',
+  perlengkapan: '/admin/perlengkapan',
+};
+
 export const AdminFooter: React.FC<AdminFooterProps> = ({ onSelectTab }) => {
+  const navigate = useNavigate();
+
   const navigateTab = (tab: AdminActiveTab) => {
-    onSelectTab(tab);
+    if (onSelectTab) onSelectTab(tab);
+    navigate(tabToAdminPath[tab]);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

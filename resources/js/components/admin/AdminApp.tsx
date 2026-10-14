@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AdminLogin } from './AdminLogin';
 import { AdminNavbar } from './AdminNavbar';
 import { AdminFooter } from './AdminFooter';
@@ -7,13 +8,13 @@ import { RekapPeminjamanView } from './RekapPeminjamanView';
 import { DataRuanganView } from './DataRuanganView';
 import { DataKendaraanView } from './DataKendaraanView';
 import { DataPerlengkapanView } from './DataPerlengkapanView';
+import { NotFoundView } from '../common/NotFoundView';
 import { getAdminSession, getAdminToken, adminLogout, getAuthHeaders } from '../../services/adminApi';
-import { AdminActiveTab } from '../../types/admin';
 
 export const AdminApp: React.FC = () => {
   const [session, setSession] = useState<{ email: string; name: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<AdminActiveTab>('rekap');
   const [booting, setBooting] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let isMounted = true;
@@ -63,12 +64,13 @@ export const AdminApp: React.FC = () => {
 
   const handleLoginSuccess = () => {
     setSession(getAdminSession());
+    navigate('/admin/rekap');
   };
 
   const handleLogout = () => {
     adminLogout();
     setSession(null);
-    setActiveTab('rekap');
+    navigate('/admin/login');
   };
 
   if (booting) {
@@ -80,27 +82,36 @@ export const AdminApp: React.FC = () => {
   }
 
   if (!session) {
-    return <AdminLogin onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <Routes>
+        <Route path="/admin/login" element={<AdminLogin onLoginSuccess={handleLoginSuccess} />} />
+        <Route path="*" element={<Navigate to="/admin/login" replace />} />
+      </Routes>
+    );
   }
 
   return (
     <div className="min-h-screen bg-[#f0f4f8] flex flex-col">
       <AdminNavbar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
         adminName={session.name}
         adminEmail={session.email}
         onLogout={handleLogout}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'rekap' && <RekapPeminjamanView />}
-        {activeTab === 'ruangan' && <DataRuanganView />}
-        {activeTab === 'kendaraan' && <DataKendaraanView />}
-        {activeTab === 'perlengkapan' && <DataPerlengkapanView />}
+        <Routes>
+          <Route path="/admin" element={<Navigate to="/admin/rekap" replace />} />
+          <Route path="/admin/login" element={<Navigate to="/admin/rekap" replace />} />
+          <Route path="/admin/rekap" element={<RekapPeminjamanView />} />
+          <Route path="/admin/ruangan" element={<DataRuanganView />} />
+          <Route path="/admin/kendaraan" element={<DataKendaraanView />} />
+          <Route path="/admin/perlengkapan" element={<DataPerlengkapanView />} />
+          <Route path="/admin/master-data" element={<Navigate to="/admin/ruangan" replace />} />
+          <Route path="*" element={<NotFoundView homePath="/admin/rekap" portalLabel="Dashboard Admin" />} />
+        </Routes>
       </main>
 
-      <AdminFooter onSelectTab={setActiveTab} />
+      <AdminFooter />
     </div>
   );
 };

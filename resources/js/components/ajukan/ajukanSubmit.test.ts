@@ -77,4 +77,48 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
       })
     );
   });
+
+  it('rejects file larger than 1 MB before making API request', async () => {
+    const form = {
+      nip: '198501012010011001',
+      nama_peminjam: 'Ahmad Subarkah',
+      unit_kerja: 'Bimas Islam',
+      nomor_hp: '08123456789',
+      mulai: '2026-10-15T08:00',
+      selesai: '2026-10-15T16:00',
+      keperluan: 'Bimbingan Teknis',
+      surat_peminjaman_name: 'oversized.pdf',
+      selected_items: [],
+    };
+
+    // Create file > 1 MB (1048577 bytes)
+    const largeContent = new Uint8Array(1048577);
+    const oversizedFile = new File([largeContent], 'oversized.pdf', { type: 'application/pdf' });
+
+    await expect(submitPeminjaman(form, oversizedFile)).rejects.toThrow(
+      /1 MB/i
+    );
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-PDF files before making API request', async () => {
+    const form = {
+      nip: '198501012010011001',
+      nama_peminjam: 'Ahmad Subarkah',
+      unit_kerja: 'Bimas Islam',
+      nomor_hp: '08123456789',
+      mulai: '2026-10-15T08:00',
+      selesai: '2026-10-15T16:00',
+      keperluan: 'Bimbingan Teknis',
+      surat_peminjaman_name: 'gambar.png',
+      selected_items: [],
+    };
+
+    const imageFile = new File(['fakeimage'], 'gambar.png', { type: 'image/png' });
+
+    await expect(submitPeminjaman(form, imageFile)).rejects.toThrow(
+      /PDF/i
+    );
+    expect(axios.post).not.toHaveBeenCalled();
+  });
 });

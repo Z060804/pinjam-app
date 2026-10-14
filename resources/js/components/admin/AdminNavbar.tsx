@@ -1,29 +1,49 @@
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Building2, LogOut, LayoutDashboard, DoorOpen, Car, Package, Globe } from 'lucide-react';
 import { AdminActiveTab } from '../../types/admin';
 
 interface AdminNavbarProps {
-  activeTab: AdminActiveTab;
-  onTabChange: (tab: AdminActiveTab) => void;
+  activeTab?: AdminActiveTab;
+  onTabChange?: (tab: AdminActiveTab) => void;
   adminName: string;
   adminEmail: string;
   onLogout: () => void;
 }
 
-const navItems: { key: AdminActiveTab; label: string; icon: React.ElementType }[] = [
-  { key: 'rekap', label: 'Rekap Peminjaman', icon: LayoutDashboard },
-  { key: 'ruangan', label: 'Ruangan', icon: DoorOpen },
-  { key: 'kendaraan', label: 'Kendaraan', icon: Car },
-  { key: 'perlengkapan', label: 'Perlengkapan', icon: Package },
+const navItems: { key: AdminActiveTab; path: string; label: string; icon: React.ElementType }[] = [
+  { key: 'rekap', path: '/admin/rekap', label: 'Rekap Peminjaman', icon: LayoutDashboard },
+  { key: 'ruangan', path: '/admin/ruangan', label: 'Ruangan', icon: DoorOpen },
+  { key: 'kendaraan', path: '/admin/kendaraan', label: 'Kendaraan', icon: Car },
+  { key: 'perlengkapan', path: '/admin/perlengkapan', label: 'Perlengkapan', icon: Package },
 ];
 
 export const AdminNavbar: React.FC<AdminNavbarProps> = ({
-  activeTab,
+  activeTab: propActiveTab,
   onTabChange,
   adminName,
   adminEmail,
   onLogout,
 }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const getActiveTab = (): AdminActiveTab => {
+    const p = location.pathname;
+    if (p.includes('/ruangan')) return 'ruangan';
+    if (p.includes('/kendaraan')) return 'kendaraan';
+    if (p.includes('/perlengkapan')) return 'perlengkapan';
+    if (p.includes('/rekap') || p === '/admin') return 'rekap';
+    return propActiveTab ?? 'rekap';
+  };
+
+  const currentTab = getActiveTab();
+
+  const handleSelect = (key: AdminActiveTab, path: string) => {
+    if (onTabChange) onTabChange(key);
+    navigate(path);
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200/80 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -39,17 +59,17 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
           </div>
 
           <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-            {navItems.map(({ key, label, icon: Icon }) => (
+            {navItems.map(({ key, path, label, icon: Icon }) => (
               <button
                 key={key}
                 id={`admin-nav-${key}`}
                 type="button"
-                onClick={() => onTabChange(key)}
+                onClick={() => handleSelect(key, path)}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === key ? 'text-[#009966] bg-emerald-50' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  currentTab === key ? 'text-[#009966] bg-emerald-50' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${activeTab === key ? 'text-[#009966]' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 ${currentTab === key ? 'text-[#009966]' : 'text-slate-400'}`} />
                 {label}
               </button>
             ))}
@@ -83,13 +103,13 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
       </div>
 
       <div className="md:hidden border-t border-slate-100 bg-white px-4 py-2 flex gap-1 overflow-x-auto">
-        {navItems.map(({ key, label, icon: Icon }) => (
+        {navItems.map(({ key, path, label, icon: Icon }) => (
           <button
             key={key}
             type="button"
-            onClick={() => onTabChange(key)}
+            onClick={() => handleSelect(key, path)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap cursor-pointer ${
-              activeTab === key ? 'bg-emerald-50 text-[#009966]' : 'text-slate-500 hover:bg-slate-50'
+              currentTab === key ? 'bg-emerald-50 text-[#009966]' : 'text-slate-500 hover:bg-slate-50'
             }`}
           >
             <Icon className="w-3.5 h-3.5" />
