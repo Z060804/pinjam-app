@@ -29,19 +29,17 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-4">
           {/* Logo */}
-          <a
-            href="/"
-            title="Kunjungi Portal Publik SIMPRU"
-            className="flex items-center gap-3 shrink-0 group cursor-pointer"
+          <div
+            className="flex items-center gap-3 shrink-0"
           >
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100 group-hover:scale-105 transition-transform">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100">
               <Building2 className="w-5 h-5 text-[#009966]" />
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-900 leading-none group-hover:text-[#009966] transition-colors">SIMPRU Admin</div>
+              <div className="text-sm font-bold text-slate-900 leading-none">SIMPRU Admin</div>
               <div className="text-[10px] text-slate-400 leading-none mt-0.5">Kementerian Agama Kabupaten Sleman</div>
             </div>
-          </a>
+          </div>
 
           {/* Nav */}
           <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
@@ -71,11 +69,12 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
           <div className="flex items-center gap-3 shrink-0">
             <a
               href="/"
+              id="admin-back-to-portal-btn"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-[#009966] hover:bg-emerald-50 border border-slate-200 transition-all cursor-pointer"
-              title="Kunjungi Portal Publik"
+              title="Kembali ke Portal Pelanggan"
             >
               <Globe className="w-3.5 h-3.5 text-slate-500" />
-              Portal Publik
+              Portal Pelanggan
             </a>
             <div className="hidden sm:block text-right">
               <div className="text-xs font-bold text-slate-800 leading-none">{adminName}</div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Eye, EyeOff, Loader2, ArrowLeft, Globe } from 'lucide-react';
+import { Shield, Eye, EyeOff, Loader2, Globe } from 'lucide-react';
 import { adminLogin } from '../../services/adminApi';
 
 interface AdminLoginProps {
@@ -35,21 +35,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
       <div className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#009966] via-[#00cc88] to-[#009966]" />
 
       <div className="w-full max-w-md">
-        {/* Navigasi Kembali ke Portal Publik */}
-        <div className="mb-6 flex items-center justify-between">
-          <a
-            href="/"
-            id="btn-back-to-public"
-            className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-[#009966] bg-white hover:bg-emerald-50 px-3.5 py-2 rounded-xl border border-slate-200 transition shadow-xs cursor-pointer"
-            title="Kembali ke halaman publik SIMPRU"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Kembali ke Portal Publik</span>
-          </a>
-          <span className="text-[11px] font-semibold text-slate-500 bg-slate-200/70 px-2.5 py-1 rounded-lg">
-            Area Khusus Admin
-          </span>
-        </div>
+
 
         {/* Logo & title */}
         <div className="text-center mb-6">
