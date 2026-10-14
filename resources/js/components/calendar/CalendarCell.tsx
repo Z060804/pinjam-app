@@ -19,14 +19,13 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
   onSelectEvent,
 }) => {
   const getBadgeColor = (ev: MasterPeminjaman): string => {
-    const jenis = (ev.jenis || '').toLowerCase();
+    const jenis = (ev.jenis ?? '').toLowerCase();
     if (jenis === 'kendaraan') {
       return 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100';
     }
     if (jenis === 'perlengkapan') {
       return 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100';
     }
-    // Ruangan / default
     return 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100';
   };
 
@@ -39,12 +38,12 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
   };
 
   const getEventTitle = (ev: MasterPeminjaman): string => {
-    return ev.item_dipinjam || ev.ruangan || ev.kegiatan || ev.keperluan || 'Peminjaman';
+    return ev.item_dipinjam ?? ev.ruangan ?? ev.kegiatan ?? ev.keperluan ?? 'Peminjaman';
   };
 
   const getRangeIndicator = (ev: MasterPeminjaman): string | null => {
-    const start = (ev.tgl_mulai || ev.mulai || '').substring(0, 10);
-    const end = (ev.tgl_selesai || ev.selesai || start).substring(0, 10);
+    const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
+    const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
     if (!start || !end || start === end) return null;
 
     if (dateString === start) return 'Mulai';
@@ -83,14 +82,16 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
           const title = getEventTitle(ev);
           const rangeInd = getRangeIndicator(ev);
           const colorClass = getBadgeColor(ev);
+          const kegiatan = ev.kegiatan ?? ev.keperluan;
+          const peminjam = ev.nama_pemohon ?? ev.nama_peminjam;
 
           return (
             <button
-              key={`${ev.id || ev.id_peminjaman}-${dateString}`}
+              key={`${ev.id ?? ev.id_peminjaman}-${dateString}`}
               type="button"
               onClick={() => onSelectEvent(ev)}
               className={`w-full text-left px-2 py-1 rounded-lg text-[11px] truncate border cursor-pointer transition-all shadow-2xs block leading-tight ${colorClass}`}
-              title={`${title} - ${ev.kegiatan || ev.keperluan} (${ev.nama_pemohon || ev.nama_peminjam})`}
+              title={`${title} - ${kegiatan} (${peminjam})`}
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="font-bold truncate">{title}</span>
@@ -102,7 +103,7 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
               </div>
               <div className="text-[10px] opacity-75 truncate mt-0.5">
                 {time && <span className="font-semibold mr-1">{time}</span>}
-                <span>{ev.kegiatan || ev.keperluan}</span>
+                <span>{kegiatan}</span>
               </div>
             </button>
           );

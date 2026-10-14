@@ -28,10 +28,7 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200/80 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-4">
-          {/* Logo */}
-          <div
-            className="flex items-center gap-3 shrink-0"
-          >
+          <div className="flex items-center gap-3 shrink-0">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100">
               <Building2 className="w-5 h-5 text-[#009966]" />
             </div>
@@ -41,31 +38,23 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
             </div>
           </div>
 
-          {/* Nav */}
           <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.key;
-              return (
-                <button
-                  key={item.key}
-                  id={`admin-nav-${item.key}`}
-                  type="button"
-                  onClick={() => onTabChange(item.key)}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                    isActive
-                      ? 'text-[#009966] bg-emerald-50'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#009966]' : 'text-slate-400'}`} />
-                  {item.label}
-                </button>
-              );
-            })}
+            {navItems.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                id={`admin-nav-${key}`}
+                type="button"
+                onClick={() => onTabChange(key)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === key ? 'text-[#009966] bg-emerald-50' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${activeTab === key ? 'text-[#009966]' : 'text-slate-400'}`} />
+                {label}
+              </button>
+            ))}
           </nav>
 
-          {/* User & logout */}
           <div className="flex items-center gap-3 shrink-0">
             <a
               href="/"
@@ -93,25 +82,20 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile nav */}
       <div className="md:hidden border-t border-slate-100 bg-white px-4 py-2 flex gap-1 overflow-x-auto">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.key;
-          return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => onTabChange(item.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap cursor-pointer ${
-                isActive ? 'bg-emerald-50 text-[#009966]' : 'text-slate-500 hover:bg-slate-50'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {item.label}
-            </button>
-          );
-        })}
+        {navItems.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onTabChange(key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap cursor-pointer ${
+              activeTab === key ? 'bg-emerald-50 text-[#009966]' : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
     </header>
   );

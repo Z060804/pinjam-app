@@ -7,15 +7,15 @@ interface NavbarProps {
   onTabChange: (tab: ActiveTab) => void;
 }
 
+const navItems = [
+  { key: 'beranda' as ActiveTab, label: 'Beranda', icon: Landmark },
+  { key: 'ketersediaan' as ActiveTab, label: 'Ketersediaan & Kalender', icon: Calendar },
+  { key: 'ajukan' as ActiveTab, label: 'Ajukan Peminjaman', icon: FilePlus2 },
+  { key: 'pelacakan' as ActiveTab, label: 'Pelacakan', icon: Search },
+];
+
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-
-  const navItems = [
-    { key: 'beranda' as ActiveTab, label: 'Beranda', icon: Landmark },
-    { key: 'ketersediaan' as ActiveTab, label: 'Ketersediaan & Kalender', icon: Calendar },
-    { key: 'ajukan' as ActiveTab, label: 'Ajukan Peminjaman', icon: FilePlus2 },
-    { key: 'pelacakan' as ActiveTab, label: 'Pelacakan', icon: Search },
-  ];
 
   const handleSelect = (tab: ActiveTab) => {
     onTabChange(tab);
@@ -41,32 +41,24 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
                   Kemenag Sleman
                 </span>
               </div>
-              <p className="text-xs text-slate-500 hidden sm:block">
-                Kementerian Agama Kabupaten Sleman
-              </p>
+              <p className="text-xs text-slate-500 hidden sm:block">Kementerian Agama Kabupaten Sleman</p>
             </div>
           </button>
 
           <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => handleSelect(item.key)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-emerald-50 text-[#009966] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#009966]' : 'text-slate-400'}`} />
-                  {item.label}
-                </button>
-              );
-            })}
+            {navItems.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleSelect(key)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                  activeTab === key ? 'bg-emerald-50 text-[#009966] shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${activeTab === key ? 'text-[#009966]' : 'text-slate-400'}`} />
+                {label}
+              </button>
+            ))}
           </nav>
 
           <div className="md:hidden">
@@ -84,23 +76,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-2 pb-4 space-y-1 shadow-lg">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => handleSelect(item.key)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium ${
-                  isActive ? 'bg-emerald-50 text-[#009966]' : 'text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {item.label}
-              </button>
-            );
-          })}
+          {navItems.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleSelect(key)}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium ${
+                activeTab === key ? 'bg-emerald-50 text-[#009966]' : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
         </div>
       )}
     </header>

@@ -43,8 +43,8 @@ function getStored<T>(key: string, fallback: T): T {
 function setStored<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error('Failed to write to localStorage:', err);
+  } catch {
+    // Ignore storage quota or access errors in restricted sandbox
   }
 }
 
@@ -210,7 +210,6 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     if (error.config && (!error.response || error.code === 'ERR_NETWORK')) {
-      console.warn('Backend unreachable (network error), using local fallback:', error.config.url);
       return Promise.resolve(resolveMockResponse(error.config));
     }
     return Promise.reject(error);

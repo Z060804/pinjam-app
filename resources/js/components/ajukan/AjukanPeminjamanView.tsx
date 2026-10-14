@@ -8,7 +8,9 @@ import { StepWaktuDanKeperluan } from './StepWaktuDanKeperluan';
 import { StepUnggahSurat } from './StepUnggahSurat';
 import { RingkasanSidebar } from './RingkasanSidebar';
 import { SuccessModal } from './SuccessModal';
-import { ArrowLeft, ArrowRight, Send, AlertTriangle } from 'lucide-react';
+import { StepNavigation } from './StepNavigation';
+import { submitPeminjaman } from './ajukanSubmit';
+import { AlertTriangle } from 'lucide-react';
 
 interface AjukanPeminjamanViewProps {
   preSelectedItem: ItemJenis | null;
@@ -48,10 +50,10 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
           axios.get('/api/master/jenis'),
           axios.get('/api/item/jenis'),
         ]);
-        setCategories(resCats.data?.data || []);
-        setItems(resItems.data?.data || []);
-      } catch (err) {
-        console.error('Failed to load item data:', err);
+        setCategories(resCats.data?.data ?? []);
+        setItems(resItems.data?.data ?? []);
+      } catch {
+        // Fallback gracefully
       }
     };
     loadData();
@@ -95,11 +97,6 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     }));
   };
 
-  const handleFieldChange = (field: keyof FormPeminjamanState, val: string) => {
-    setErrorMessage(null);
-    setForm((prev) => ({ ...prev, [field]: val }));
-  };
-
   const canProceed = (): boolean => {
     if (step === 1) return form.selected_items.length > 0;
     if (step === 2) return Boolean(form.nip.trim() && form.nama_peminjam.trim() && form.unit_kerja.trim());
@@ -109,43 +106,15 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     return true;
   };
 
-  const normalizeDate = (dt: string): string => {
-    return dt.includes('T') ? dt.replace('T', ' ') + (dt.length === 16 ? ':00' : '') : dt;
-  };
-
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      let response;
-      if (uploadedFile) {
-        const formData = new FormData();
-        formData.append('nip', form.nip);
-        formData.append('nama_peminjam', form.nama_peminjam);
-        formData.append('unit_kerja', form.unit_kerja);
-        if (form.nomor_hp) formData.append('nomor_hp', form.nomor_hp);
-        formData.append('mulai', normalizeDate(form.mulai));
-        formData.append('selesai', normalizeDate(form.selesai));
-        formData.append('keperluan', form.keperluan);
-        formData.append('surat_peminjaman_name', uploadedFile.name);
-        formData.append('surat_file', uploadedFile);
-        formData.append('selected_items', JSON.stringify(form.selected_items));
-
-        response = await axios.post('/api/peminjaman', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-      } else {
-        response = await axios.post('/api/peminjaman', {
-          ...form,
-          surat_peminjaman_name: form.surat_peminjaman_name || null,
-          mulai: normalizeDate(form.mulai),
-          selesai: normalizeDate(form.selesai),
-        });
-      }
-      setCreatedId(response.data?.data?.id_peminjaman || 'PMJ-SUCCESS');
+      const id = await submitPeminjaman(form, uploadedFile);
+      setCreatedId(id);
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
-      const msg = errorObj.response?.data?.message || errorObj.message || 'Gagal mengirim pengajuan peminjaman';
+      const msg = errorObj.response?.data?.message ?? errorObj.message ?? 'Gagal mengirim pengajuan peminjaman';
       setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
@@ -157,7 +126,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Ajukan Peminjaman</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Satu permohonan untuk seluruh item yang Anda butuhkan. Siapkan data peminjam dan surat peminjaman.
+          Satu permohonan untuk seluruh item yang Anda butuhkan.
         </p>
       </div>
 
@@ -180,7 +149,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 namaPeminjam={form.nama_peminjam}
                 unitKerja={form.unit_kerja}
                 nomorHp={form.nomor_hp}
-                onChangeField={(f, v) => handleFieldChange(f, v)}
+                onChangeField={(f, v) => { setErrorMessage(null); setForm((prev) => ({ ...prev, [f]: v })); }}
               />
             )}
             {step === 3 && (
@@ -188,7 +157,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 mulai={form.mulai}
                 selesai={form.selesai}
                 keperluan={form.keperluan}
-                onChangeField={(f, v) => handleFieldChange(f, v)}
+                onChangeField={(f, v) => { setErrorMessage(null); setForm((prev) => ({ ...prev, [f]: v })); }}
               />
             )}
             {step === 4 && (
@@ -198,9 +167,9 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                   file={uploadedFile}
                   onFileSelect={(f) => {
                     setUploadedFile(f);
-                    handleFieldChange('surat_peminjaman_name', f.name);
+                    setForm((prev) => ({ ...prev, surat_peminjaman_name: f.name }));
                   }}
-                  onFileChange={(fn) => handleFieldChange('surat_peminjaman_name', fn)}
+                  onFileChange={(fn) => setForm((prev) => ({ ...prev, surat_peminjaman_name: fn }))}
                   nip={form.nip}
                   namaPeminjam={form.nama_peminjam}
                   mulai={form.mulai}
@@ -216,43 +185,14 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
             )}
           </div>
 
-          <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between">
-            <button
-              type="button"
-              disabled={step === 1}
-              onClick={() => { setErrorMessage(null); setStep((s) => Math.max(1, s - 1)); }}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
-                step === 1 ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-700 bg-slate-100 hover:bg-slate-200'
-              }`}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Kembali
-            </button>
-
-            {step < 4 ? (
-              <button
-                type="button"
-                disabled={!canProceed()}
-                onClick={() => { setErrorMessage(null); setStep((s) => s + 1); }}
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold text-white cursor-pointer shadow-xs transition-all ${
-                  canProceed() ? 'bg-[#009966] hover:bg-[#008055]' : 'bg-slate-300 cursor-not-allowed opacity-60'
-                }`}
-              >
-                Lanjut
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={isSubmitting || !canProceed()}
-                onClick={handleSubmit}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#009966] hover:bg-[#008055] cursor-pointer shadow-md shadow-emerald-700/20"
-              >
-                <Send className="w-3.5 h-3.5" />
-                {isSubmitting ? 'Mengirim...' : 'Kirim Permohonan'}
-              </button>
-            )}
-          </div>
+          <StepNavigation
+            step={step}
+            canProceed={canProceed()}
+            isSubmitting={isSubmitting}
+            onPrev={() => { setErrorMessage(null); setStep((s) => Math.max(1, s - 1)); }}
+            onNext={() => { setErrorMessage(null); setStep((s) => s + 1); }}
+            onSubmit={handleSubmit}
+          />
         </div>
 
         <div className="lg:col-span-1">

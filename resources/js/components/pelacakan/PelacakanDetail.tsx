@@ -2,7 +2,7 @@ import React from 'react';
 import { PeminjamanFull } from '../../types';
 import { BadgeStatus } from '../common/BadgeStatus';
 import { TimelineStatus } from './TimelineStatus';
-import { User, Building, Calendar, FileText, ShieldCheck, Layers } from 'lucide-react';
+import { User, Building, Calendar, FileText, ShieldCheck, Layers, AlertCircle } from 'lucide-react';
 import { formatDateTimeDisplay } from '../../utils/date';
 
 interface PelacakanDetailProps {
@@ -10,6 +10,8 @@ interface PelacakanDetailProps {
 }
 
 export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
+  const items = data.items ?? [];
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -57,27 +59,34 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
         <div className="flex items-center gap-2 mb-3">
           <Layers className="w-4 h-4 text-emerald-600" />
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-            Daftar Item yang Dipinjam ({(data.items || []).length})
+            Daftar Item yang Dipinjam ({items.length})
           </h4>
         </div>
-        <div className="space-y-2">
-          {(data.items || []).map((pi) => (
-            <div
-              key={pi.id}
-              className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs"
-            >
-              <div>
-                <span className="font-bold text-slate-900 block">{pi.item?.nama || `Item #${pi.item_id}`}</span>
-                {pi.item?.registration_id && (
-                  <span className="text-[10px] font-mono text-slate-500">{pi.item.registration_id}</span>
-                )}
+        {items.length === 0 ? (
+          <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+            <AlertCircle className="w-4 h-4 text-slate-300" />
+            <span>Data tidak ditemukan (belum ada item yang dicatat).</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((pi) => (
+              <div
+                key={pi.id}
+                className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs"
+              >
+                <div>
+                  <span className="font-bold text-slate-900 block">{pi.item?.nama ?? `Item #${pi.item_id}`}</span>
+                  {pi.item?.registration_id && (
+                    <span className="text-[10px] font-mono text-slate-500">{pi.item.registration_id}</span>
+                  )}
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                  {pi.jumlah} unit
+                </span>
               </div>
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
-                {pi.jumlah} unit
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
@@ -97,10 +106,6 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
             <span>Petugas Verifikator: <strong className="text-slate-700">{data.petugas}</strong></span>
           </div>
         )}
-      </div>
-
-      <div className="text-[11px] text-slate-400 bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/50">
-        Data pemohon dan dokumen dinas dilindungi privasi. Informasi sensitif disamarkan pada tampilan pelacakan publik.
       </div>
     </div>
   );

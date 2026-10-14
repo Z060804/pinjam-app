@@ -4,6 +4,7 @@
  */
 import axios from 'axios';
 import { Ruangan, Kendaraan, Perlengkapan, Permohonan } from '../types/admin';
+import { ItemJenis } from '../types';
 import { CATEGORY_IDS } from '../constants';
 import {
   INITIAL_RUANGAN,
@@ -31,8 +32,8 @@ try {
   if (cachedPermohonan && cachedPermohonan.includes('**')) {
     localStorage.removeItem(KEYS.PERMOHONAN);
   }
-} catch (e) {
-  // Ignore
+} catch {
+  // Ignore in environments without localStorage
 }
 
 function getStored<T>(key: string, fallback: T): T {
@@ -47,8 +48,8 @@ function getStored<T>(key: string, fallback: T): T {
 function setStored<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error('localStorage write failed:', err);
+  } catch {
+    // Ignore storage quota or access errors in restricted sandbox
   }
 }
 
@@ -68,7 +69,7 @@ export function setAdminToken(token: string | null): void {
       localStorage.removeItem(KEYS.TOKEN);
     }
   } catch {
-    // Ignore
+    // Ignore in restricted environments
   }
 }
 
@@ -83,14 +84,14 @@ export async function adminLogin(email: string, password: string): Promise<{ ok:
     const res = await axios.post('/api/admin/login', { email, password });
     if (res.data?.success && res.data?.token) {
       setAdminToken(res.data.token);
-      const user = res.data.user || { email, name: 'Administrator Kemenag' };
+      const user = res.data.user ?? { email, name: 'Administrator Kemenag' };
       setStored(KEYS.AUTH, user);
       return { ok: true };
     }
-    return { ok: false, message: res.data?.message || 'Login gagal.' };
+    return { ok: false, message: res.data?.message ?? 'Login gagal.' };
   } catch (err: unknown) {
     const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
-    const msg = errorObj.response?.data?.message || errorObj.message || 'Email atau kata sandi salah.';
+    const msg = errorObj.response?.data?.message ?? errorObj.message ?? 'Email atau kata sandi salah.';
     return { ok: false, message: msg };
   }
 }
@@ -103,8 +104,8 @@ export async function adminLogout(): Promise<void> {
         headers: getAuthHeaders(),
       });
     }
-  } catch (err) {
-    console.warn('API logout failed:', err);
+  } catch {
+    // Best-effort remote logout
   } finally {
     setAdminToken(null);
     localStorage.removeItem(KEYS.AUTH);
@@ -131,14 +132,12 @@ export async function getPermohonan(): Promise<Permohonan[]> {
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 401) {
-        console.warn('Token admin tidak valid atau kedaluwarsa. Mengarahkan ke login ulang.');
         setAdminToken(null);
         localStorage.removeItem(KEYS.AUTH);
         localStorage.removeItem(KEYS.PERMOHONAN);
         window.location.reload();
         return INITIAL_PERMOHONAN;
       }
-      console.warn('API /api/master/peminjaman error, using cache:', err);
     }
   }
 
@@ -167,7 +166,7 @@ export async function updateStatusPermohonan(
   );
 
   if (res.data?.success === false) {
-    throw new Error(res.data?.message || 'Gagal memperbarui status di database.');
+    throw new Error(res.data?.message ?? 'Gagal memperbarui status di database.');
   }
 
   // Hanya perbarui cache lokal JIKA request ke server database berhasil
@@ -185,15 +184,14 @@ async function tryDeleteItemApi(id: number, label: string): Promise<string | nul
       headers: getAuthHeaders(),
     });
     if (res.data?.success === false) {
-      return res.data?.message || `Item gagal dihapus (${label}).`;
+      return res.data?.message ?? `Item gagal dihapus (${label}).`;
     }
     return null;
   } catch (err) {
     const response = (err as { response?: { data?: { message?: string } } })?.response;
     if (response) {
-      return response.data?.message || `Item gagal dihapus (${label}).`;
+      return response.data?.message ?? `Item gagal dihapus (${label}).`;
     }
-    console.warn(`API error deleting ${label}:`, err);
     throw err;
   }
 }
@@ -203,18 +201,18 @@ export async function getRuangan(): Promise<Ruangan[]> {
   try {
     const res = await axios.get('/api/item/jenis', { params: { id_jenis: CATEGORY_IDS.RUANGAN } });
     if (res.data?.success && Array.isArray(res.data?.data)) {
-      const items: Ruangan[] = res.data.data.map((it: any) => ({
+      const items: Ruangan[] = res.data.data.map((it: ItemJenis) => ({
         id: it.id,
         nama: it.nama,
-        kapasitas: it.kapasitas || 0,
-        fasilitas: it.fasilitas || it.keterangan || '-',
+        kapasitas: it.kapasitas ?? 0,
+        fasilitas: it.fasilitas ?? it.keterangan ?? '-',
         is_active: Boolean(it.is_active),
       }));
       setStored(KEYS.RUANGAN, items);
       return items;
     }
-  } catch (err) {
-    console.warn('API /api/item/jenis unreachable, using local storage:', err);
+  } catch {
+    // Fallback to local storage
   }
   return getStored<Ruangan[]>(KEYS.RUANGAN, INITIAL_RUANGAN);
 }
@@ -234,12 +232,12 @@ export async function addRuangan(data: Omit<Ruangan, 'id'>): Promise<Ruangan> {
       { headers: getAuthHeaders() }
     );
     if (res.data?.success && res.data?.data) {
-      const item = res.data.data;
+      const item: ItemJenis = res.data.data;
       const newRuangan: Ruangan = {
         id: item.id,
         nama: item.nama,
-        kapasitas: item.kapasitas || 0,
-        fasilitas: item.fasilitas || '-',
+        kapasitas: item.kapasitas ?? 0,
+        fasilitas: item.fasilitas ?? '-',
         is_active: Boolean(item.is_active),
       };
       const list = getStored<Ruangan[]>(KEYS.RUANGAN, INITIAL_RUANGAN);
@@ -247,7 +245,6 @@ export async function addRuangan(data: Omit<Ruangan, 'id'>): Promise<Ruangan> {
       return newRuangan;
     }
   } catch (err) {
-    console.warn('API error adding ruangan:', err);
     throw err;
   }
 
@@ -267,23 +264,18 @@ export async function deleteRuangan(id: number): Promise<string | null> {
 }
 
 export async function updateRuangan(id: number, data: Partial<Omit<Ruangan, 'id'>>): Promise<void> {
-  try {
-    await axios.put(
-      `/api/item/jenis/${id}`,
-      {
-        id_jenis: CATEGORY_IDS.RUANGAN,
-        nama: data.nama,
-        kapasitas: data.kapasitas,
-        fasilitas: data.fasilitas,
-        keterangan: data.fasilitas,
-        is_active: data.is_active,
-      },
-      { headers: getAuthHeaders() }
-    );
-  } catch (err) {
-    console.warn('API error updating ruangan:', err);
-    throw err;
-  }
+  await axios.put(
+    `/api/item/jenis/${id}`,
+    {
+      id_jenis: CATEGORY_IDS.RUANGAN,
+      nama: data.nama,
+      kapasitas: data.kapasitas,
+      fasilitas: data.fasilitas,
+      keterangan: data.fasilitas,
+      is_active: data.is_active,
+    },
+    { headers: getAuthHeaders() }
+  );
   const list = getStored<Ruangan[]>(KEYS.RUANGAN, INITIAL_RUANGAN);
   const updated = list.map((r) => (r.id === id ? { ...r, ...data } : r));
   setStored(KEYS.RUANGAN, updated);
@@ -294,19 +286,19 @@ export async function getKendaraan(): Promise<Kendaraan[]> {
   try {
     const res = await axios.get('/api/item/jenis', { params: { id_jenis: CATEGORY_IDS.KENDARAAN } });
     if (res.data?.success && Array.isArray(res.data?.data)) {
-      const items: Kendaraan[] = res.data.data.map((it: any) => ({
+      const items: Kendaraan[] = res.data.data.map((it: ItemJenis) => ({
         id: it.id,
         nama: it.nama,
-        nopol: it.registration_id || '-',
-        kapasitas: it.kapasitas || 7,
-        keterangan: it.keterangan || it.fasilitas || '-',
+        nopol: it.registration_id ?? '-',
+        kapasitas: it.kapasitas ?? 7,
+        keterangan: it.keterangan ?? it.fasilitas ?? '-',
         is_active: Boolean(it.is_active),
       }));
       setStored(KEYS.KENDARAAN, items);
       return items;
     }
-  } catch (err) {
-    console.warn('API error fetching kendaraan:', err);
+  } catch {
+    // Fallback to local storage
   }
   return getStored<Kendaraan[]>(KEYS.KENDARAAN, INITIAL_KENDARAAN);
 }
@@ -326,13 +318,13 @@ export async function addKendaraan(data: Omit<Kendaraan, 'id'>): Promise<Kendara
       { headers: getAuthHeaders() }
     );
     if (res.data?.success && res.data?.data) {
-      const item = res.data.data;
+      const item: ItemJenis = res.data.data;
       const newKendaraan: Kendaraan = {
         id: item.id,
         nama: item.nama,
-        nopol: item.registration_id || '-',
-        kapasitas: item.kapasitas || 7,
-        keterangan: item.keterangan || '-',
+        nopol: item.registration_id ?? '-',
+        kapasitas: item.kapasitas ?? 7,
+        keterangan: item.keterangan ?? '-',
         is_active: Boolean(item.is_active),
       };
       const list = getStored<Kendaraan[]>(KEYS.KENDARAAN, INITIAL_KENDARAAN);
@@ -340,7 +332,6 @@ export async function addKendaraan(data: Omit<Kendaraan, 'id'>): Promise<Kendara
       return newKendaraan;
     }
   } catch (err) {
-    console.warn('API error adding kendaraan:', err);
     throw err;
   }
 
@@ -360,23 +351,18 @@ export async function deleteKendaraan(id: number): Promise<string | null> {
 }
 
 export async function updateKendaraan(id: number, data: Partial<Omit<Kendaraan, 'id'>>): Promise<void> {
-  try {
-    await axios.put(
-      `/api/item/jenis/${id}`,
-      {
-        id_jenis: CATEGORY_IDS.KENDARAAN,
-        nama: data.nama,
-        registration_id: data.nopol,
-        kapasitas: data.kapasitas,
-        keterangan: data.keterangan,
-        is_active: data.is_active,
-      },
-      { headers: getAuthHeaders() }
-    );
-  } catch (err) {
-    console.warn('API error updating kendaraan:', err);
-    throw err;
-  }
+  await axios.put(
+    `/api/item/jenis/${id}`,
+    {
+      id_jenis: CATEGORY_IDS.KENDARAAN,
+      nama: data.nama,
+      registration_id: data.nopol,
+      kapasitas: data.kapasitas,
+      keterangan: data.keterangan,
+      is_active: data.is_active,
+    },
+    { headers: getAuthHeaders() }
+  );
   const list = getStored<Kendaraan[]>(KEYS.KENDARAAN, INITIAL_KENDARAAN);
   const updated = list.map((k) => (k.id === id ? { ...k, ...data } : k));
   setStored(KEYS.KENDARAAN, updated);
@@ -387,19 +373,19 @@ export async function getPerlengkapan(): Promise<Perlengkapan[]> {
   try {
     const res = await axios.get('/api/item/jenis', { params: { id_jenis: CATEGORY_IDS.ALAT } });
     if (res.data?.success && Array.isArray(res.data?.data)) {
-      const items: Perlengkapan[] = res.data.data.map((it: any) => ({
+      const items: Perlengkapan[] = res.data.data.map((it: ItemJenis) => ({
         id: it.id,
         nama: it.nama,
-        kode: it.registration_id || '-',
-        jumlah: it.quantity || 1,
-        keterangan: it.keterangan || it.fasilitas || '-',
+        kode: it.registration_id ?? '-',
+        jumlah: it.quantity ?? 1,
+        keterangan: it.keterangan ?? it.fasilitas ?? '-',
         is_active: Boolean(it.is_active),
       }));
       setStored(KEYS.PERLENGKAPAN, items);
       return items;
     }
-  } catch (err) {
-    console.warn('API error fetching perlengkapan:', err);
+  } catch {
+    // Fallback to local storage
   }
   return getStored<Perlengkapan[]>(KEYS.PERLENGKAPAN, INITIAL_PERLENGKAPAN);
 }
@@ -419,13 +405,13 @@ export async function addPerlengkapan(data: Omit<Perlengkapan, 'id'>): Promise<P
       { headers: getAuthHeaders() }
     );
     if (res.data?.success && res.data?.data) {
-      const item = res.data.data;
+      const item: ItemJenis = res.data.data;
       const newPerlengkapan: Perlengkapan = {
         id: item.id,
         nama: item.nama,
-        kode: item.registration_id || '-',
-        jumlah: item.quantity || 1,
-        keterangan: item.keterangan || '-',
+        kode: item.registration_id ?? '-',
+        jumlah: item.quantity ?? 1,
+        keterangan: item.keterangan ?? '-',
         is_active: Boolean(item.is_active),
       };
       const list = getStored<Perlengkapan[]>(KEYS.PERLENGKAPAN, INITIAL_PERLENGKAPAN);
@@ -433,7 +419,6 @@ export async function addPerlengkapan(data: Omit<Perlengkapan, 'id'>): Promise<P
       return newPerlengkapan;
     }
   } catch (err) {
-    console.warn('API error adding perlengkapan:', err);
     throw err;
   }
 
@@ -453,23 +438,18 @@ export async function deletePerlengkapan(id: number): Promise<string | null> {
 }
 
 export async function updatePerlengkapan(id: number, data: Partial<Omit<Perlengkapan, 'id'>>): Promise<void> {
-  try {
-    await axios.put(
-      `/api/item/jenis/${id}`,
-      {
-        id_jenis: CATEGORY_IDS.ALAT,
-        nama: data.nama,
-        registration_id: data.kode,
-        quantity: data.jumlah,
-        keterangan: data.keterangan,
-        is_active: data.is_active,
-      },
-      { headers: getAuthHeaders() }
-    );
-  } catch (err) {
-    console.warn('API error updating perlengkapan:', err);
-    throw err;
-  }
+  await axios.put(
+    `/api/item/jenis/${id}`,
+    {
+      id_jenis: CATEGORY_IDS.ALAT,
+      nama: data.nama,
+      registration_id: data.kode,
+      quantity: data.jumlah,
+      keterangan: data.keterangan,
+      is_active: data.is_active,
+    },
+    { headers: getAuthHeaders() }
+  );
   const list = getStored<Perlengkapan[]>(KEYS.PERLENGKAPAN, INITIAL_PERLENGKAPAN);
   const updated = list.map((p) => (p.id === id ? { ...p, ...data } : p));
   setStored(KEYS.PERLENGKAPAN, updated);

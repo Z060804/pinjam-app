@@ -61,8 +61,8 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
   // An event matches a cell if cellDate is between its start date and end date!
   const getEventsForDate = (cellDateStr: string): MasterPeminjaman[] => {
     return events.filter((ev) => {
-      const start = (ev.tgl_mulai || ev.mulai || '').substring(0, 10);
-      const end = (ev.tgl_selesai || ev.selesai || start).substring(0, 10);
+      const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
+      const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
       if (!start) return false;
       return cellDateStr >= start && cellDateStr <= end;
     });

@@ -24,25 +24,24 @@ export const AgendaListView: React.FC<AgendaListViewProps> = ({ events, onSelect
     );
   }
 
-  // Sort events by start date ascending
   const sorted = [...events].sort((a, b) => {
-    const dateA = a.tgl_mulai || a.mulai || '';
-    const dateB = b.tgl_mulai || b.mulai || '';
+    const dateA = a.tgl_mulai ?? a.mulai ?? '';
+    const dateB = b.tgl_mulai ?? b.mulai ?? '';
     return dateA.localeCompare(dateB);
   });
 
   return (
     <div className="space-y-3">
       {sorted.map((ev) => {
-        const tglMulai = (ev.tgl_mulai || ev.mulai || '').substring(0, 10);
-        const tglSelesai = (ev.tgl_selesai || ev.selesai || tglMulai).substring(0, 10);
-        const isMultiDay = tglMulai && tglSelesai && tglMulai !== tglSelesai;
-        const waktuMulai = ev.waktu_mulai || (ev.mulai?.includes(' ') ? ev.mulai.split(' ')[1].substring(0, 5) : '08:00');
-        const waktuSelesai = ev.waktu_selesai || (ev.selesai?.includes(' ') ? ev.selesai.split(' ')[1].substring(0, 5) : '16:00');
-        const itemName = ev.item_dipinjam || ev.ruangan || 'Sarana Prasarana';
-        const pemohon = ev.nama_pemohon || ev.nama_peminjam;
-        const unit = ev.unit_pemohon || ev.unit_kerja;
-        const idTiket = ev.id || ev.id_peminjaman;
+        const tglMulai = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
+        const tglSelesai = (ev.tgl_selesai ?? ev.selesai ?? tglMulai).substring(0, 10);
+        const isMultiDay = Boolean(tglMulai && tglSelesai && tglMulai !== tglSelesai);
+        const waktuMulai = ev.waktu_mulai ?? (ev.mulai?.includes(' ') ? ev.mulai.split(' ')[1].substring(0, 5) : '08:00');
+        const waktuSelesai = ev.waktu_selesai ?? (ev.selesai?.includes(' ') ? ev.selesai.split(' ')[1].substring(0, 5) : '16:00');
+        const itemName = ev.item_dipinjam ?? ev.ruangan ?? 'Sarana Prasarana';
+        const pemohon = ev.nama_pemohon ?? ev.nama_peminjam;
+        const unit = ev.unit_pemohon ?? ev.unit_kerja;
+        const idTiket = ev.id ?? ev.id_peminjaman;
 
         return (
           <div
@@ -63,7 +62,7 @@ export const AgendaListView: React.FC<AgendaListViewProps> = ({ events, onSelect
                 )}
               </div>
               <h4 className="text-base font-extrabold text-slate-900 truncate">
-                {ev.kegiatan || ev.keperluan}
+                {ev.kegiatan ?? ev.keperluan}
               </h4>
               <p className="text-xs text-[#009966] font-semibold">
                 Item: {itemName}
