@@ -61,7 +61,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
         setCategories(resCats.data?.data ?? []);
         setItems(resItems.data?.data ?? []);
       } catch {
-        // Fallback gracefully
+        setErrorMessage('Gagal memuat katalog sarana prasarana dari server backend.');
       }
     };
     loadData();

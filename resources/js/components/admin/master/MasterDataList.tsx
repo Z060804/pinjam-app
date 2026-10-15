@@ -4,6 +4,8 @@ import { Pencil, Trash2, AlertCircle } from 'lucide-react';
 interface MasterDataListProps<T extends { id: number; nama: string; is_active: boolean }> {
   list: T[];
   loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   entityKey: string;
   entityName: string;
   listTitle: string;
@@ -20,6 +22,8 @@ interface MasterDataListProps<T extends { id: number; nama: string; is_active: b
 export function MasterDataList<T extends { id: number; nama: string; is_active: boolean }>({
   list,
   loading,
+  error,
+  onRetry,
   entityKey,
   entityName,
   listTitle,
@@ -47,6 +51,21 @@ export function MasterDataList<T extends { id: number; nama: string; is_active: 
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 border-2 border-[#009966] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="text-center py-12 px-4 text-rose-600 flex flex-col items-center justify-center">
+          <AlertCircle className="w-10 h-10 text-rose-400 mb-2" />
+          <p className="font-semibold text-rose-800">Gagal Memuat Data Server</p>
+          <p className="text-xs text-rose-600 mt-1 max-w-md">{error}</p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-3 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
+            >
+              Coba Lagi
+            </button>
+          )}
         </div>
       ) : list.length === 0 ? (
         <div className="text-center py-12 px-4 text-slate-500 flex flex-col items-center justify-center">

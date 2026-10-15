@@ -19,11 +19,18 @@ export const RekapPeminjamanView: React.FC = () => {
   const [selectedPermohonan, setSelectedPermohonan] = useState<Permohonan | null>(null);
   const [jenisFilter, setJenisFilter] = useState<'Semua' | Permohonan['jenis']>('Semua');
 
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const data = await getPermohonan();
       setList(data);
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message ?? 'Gagal memuat data rekap dari server.';
+      setErrorMessage(msg);
+      setList([]);
     } finally {
       setLoading(false);
     }
@@ -122,6 +129,22 @@ export const RekapPeminjamanView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {errorMessage && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div>
+            <p className="text-xs font-bold text-rose-900">Gagal Memuat Data Rekap Server</p>
+            <p className="text-xs text-rose-700 mt-0.5">{errorMessage}</p>
+          </div>
+          <button
+            type="button"
+            onClick={loadData}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 transition"
+          >
+            Muat Ulang
+          </button>
+        </div>
+      )}
 
       <RekapStatsCards counts={counts} />
 

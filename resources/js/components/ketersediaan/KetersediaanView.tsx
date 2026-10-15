@@ -26,6 +26,7 @@ export const KetersediaanView: React.FC<KetersediaanViewProps> = ({
   const [items, setItems] = useState<ItemJenis[]>([]);
   const [peminjamanList, setPeminjamanList] = useState<MasterPeminjaman[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(resolvedCategory);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -35,24 +36,27 @@ export const KetersediaanView: React.FC<KetersediaanViewProps> = ({
     }
   }, [resolvedCategory]);
 
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [resJenis, resItems, resPeminjaman] = await Promise.all([
+        axios.get('/api/master/jenis'),
+        axios.get('/api/item/jenis'),
+        axios.get('/api/peminjaman'),
+      ]);
+      setCategories(resJenis.data?.data ?? []);
+      setItems(resItems.data?.data ?? []);
+      setPeminjamanList(resPeminjaman.data?.data ?? []);
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message ?? 'Gagal memuat data dari server backend.';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [resJenis, resItems, resPeminjaman] = await Promise.all([
-          axios.get('/api/master/jenis'),
-          axios.get('/api/item/jenis'),
-          axios.get('/api/peminjaman'),
-        ]);
-        setCategories(resJenis.data?.data ?? []);
-        setItems(resItems.data?.data ?? []);
-        setPeminjamanList(resPeminjaman.data?.data ?? []);
-      } catch {
-        // Fallback gracefully to default empty list
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
   }, []);
 
@@ -89,7 +93,26 @@ export const KetersediaanView: React.FC<KetersediaanViewProps> = ({
         onSearchChange={setSearchQuery}
       />
 
-      {filteredItems.length === 0 ? (
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-rose-900">Gagal Terhubung ke Backend</p>
+              <p className="text-xs text-rose-700 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 transition"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      )}
+
+      {!error && filteredItems.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 flex flex-col items-center justify-center">
           <AlertCircle className="w-10 h-10 text-slate-300 mb-2" />
           <p className="font-semibold text-slate-700">Data tidak ditemukan</p>

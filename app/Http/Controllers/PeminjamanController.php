@@ -250,105 +250,136 @@ class PeminjamanController extends Controller
         }
         $itemsPayload = array_values($aggregatedPayload);
 
-        // Check for schedule conflict
-        $conflicts = $this->detectConflicts($validated['mulai'], $validated['selesai'], $itemsPayload);
-        if (!empty($conflicts)) {
-            $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-            return response()->json([
-                'success' => false,
-                'message' => "Jadwal bentrok: {$conflictItemNames} sudah dipinjam pada rentang waktu yang sama.",
-                'conflicts' => $conflicts,
-            ], 422);
-        }
-
         // Simpan file berkas surat jika ada yang diunggah secara nyata (ke disk private 'local')
         $suratFilename = null;
         $suratUrl = null;
+        $uploadedFilePath = null;
 
         if ($request->hasFile('surat_file')) {
             $file = $request->file('surat_file');
             $originalName = $file->getClientOriginalName();
             $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $originalName);
             $storedPath = $file->storeAs('surat', $safeName, 'local');
+            $uploadedFilePath = $storedPath;
             $suratFilename = $originalName;
             $suratUrl = $storedPath;
         }
 
-        return DB::transaction(function () use ($validated, $itemsPayload, $request, $suratFilename, $suratUrl) {
-            $now = Carbon::now();
-            $prefix = 'PMJ-' . $now->format('Ym') . '-';
+        try {
+            return DB::transaction(function () use ($validated, $itemsPayload, $request, $suratFilename, $suratUrl, $uploadedFilePath) {
+                // 1. Ambil seluruh item_id yang dipinjam, pastikan unik dan terurut ascending untuk mencegah deadlock
+                $itemIds = array_values(array_unique(array_column($itemsPayload, 'item_id')));
+                sort($itemIds);
 
-            $records = Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
-                ->orWhere('id', 'like', $prefix . '%')
-                ->lockForUpdate()
-                ->get(['id_peminjaman', 'id']);
+                // 2. Kunci baris master item_jenis secara konsisten untuk koordinasi dengan persetujuan admin
+                if (!empty($itemIds)) {
+                    ItemJenis::whereIn('id', $itemIds)
+                        ->orderBy('id', 'asc')
+                        ->lockForUpdate()
+                        ->get();
+                }
 
-            $lastSeq = 0;
-            foreach ($records as $r) {
-                $seqId = $r->id_peminjaman ?: $r->id;
-                if ($seqId && str_starts_with($seqId, $prefix)) {
-                    $num = (int) substr($seqId, strlen($prefix));
-                    if ($num > $lastSeq) {
-                        $lastSeq = $num;
+                // 3. Serialisasi sequence ID bulanan secara aman pada database
+                if (\Illuminate\Support\Facades\Schema::hasTable('master_jenis')) {
+                    DB::table('master_jenis')->where('id', 1)->lockForUpdate()->first();
+                }
+
+                // 4. Pengecekan konflik jadwal di dalam transaksi terisolasi
+                $conflicts = $this->detectConflicts($validated['mulai'], $validated['selesai'], $itemsPayload);
+                if (!empty($conflicts)) {
+                    // Clean up file if conflict occurs to prevent orphan files
+                    if ($uploadedFilePath && Storage::disk('local')->exists($uploadedFilePath)) {
+                        Storage::disk('local')->delete($uploadedFilePath);
+                    }
+                    $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Jadwal bentrok: {$conflictItemNames} sudah dipinjam pada rentang waktu yang sama.",
+                        'conflicts' => $conflicts,
+                    ], 422);
+                }
+
+                $now = Carbon::now();
+                $prefix = 'PMJ-' . $now->format('Ym') . '-';
+
+                $records = Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
+                    ->orWhere('id', 'like', $prefix . '%')
+                    ->lockForUpdate()
+                    ->get(['id_peminjaman', 'id']);
+
+                $lastSeq = 0;
+                foreach ($records as $r) {
+                    $seqId = $r->id_peminjaman ?: $r->id;
+                    if ($seqId && str_starts_with($seqId, $prefix)) {
+                        $num = (int) substr($seqId, strlen($prefix));
+                        if ($num > $lastSeq) {
+                            $lastSeq = $num;
+                        }
                     }
                 }
-            }
 
-            do {
-                $lastSeq++;
-                $newId = $prefix . str_pad((string)$lastSeq, 3, '0', STR_PAD_LEFT);
-            } while (Peminjaman::where('id_peminjaman', $newId)->orWhere('id', $newId)->exists());
+                do {
+                    $lastSeq++;
+                    $newId = $prefix . str_pad((string)$lastSeq, 3, '0', STR_PAD_LEFT);
+                } while (Peminjaman::where('id_peminjaman', $newId)->orWhere('id', $newId)->exists());
 
-            $peminjaman = Peminjaman::create([
-                'id_peminjaman' => $newId,
-                'id' => $newId,
-                'tgl_pengajuan' => $now->toDateString(),
-                'nip' => $validated['nip'] ?? '-',
-                'nama_peminjam' => $validated['nama_peminjam'],
-                'nama_pemohon' => $validated['nama_peminjam'],
-                'unit_kerja' => $validated['unit_kerja'],
-                'unit_pemohon' => $validated['unit_kerja'],
-                'pihak_pemohon' => $request->input('pihak_pemohon', 'Internal Kemenag Sleman'),
-                'nomor_hp' => $request->input('nomor_hp', '-'),
-                'penanggung_jawab' => $request->input('penanggung_jawab', $validated['nama_peminjam']),
-                'jumlah_peserta' => (int) $request->input('jumlah_peserta', 1),
-                'mulai' => $validated['mulai'],
-                'selesai' => $validated['selesai'],
-                'tgl_mulai' => substr($validated['mulai'], 0, 10),
-                'tgl_selesai' => substr($validated['selesai'], 0, 10),
-                'waktu_mulai' => strlen($validated['mulai']) >= 16 ? substr($validated['mulai'], 11, 5) : '08:00',
-                'waktu_selesai' => strlen($validated['selesai']) >= 16 ? substr($validated['selesai'], 11, 5) : '16:00',
-                'keperluan' => $validated['keperluan'],
-                'surat_peminjaman' => $suratFilename,
-                'surat_url' => $suratUrl,
-                'status' => 'Menunggu Persetujuan',
-                'petugas' => null,
-            ]);
+                $peminjaman = Peminjaman::create([
+                    'id_peminjaman' => $newId,
+                    'id' => $newId,
+                    'tgl_pengajuan' => $now->toDateString(),
+                    'nip' => $validated['nip'] ?? '-',
+                    'nama_peminjam' => $validated['nama_peminjam'],
+                    'nama_pemohon' => $validated['nama_peminjam'],
+                    'unit_kerja' => $validated['unit_kerja'],
+                    'unit_pemohon' => $validated['unit_kerja'],
+                    'pihak_pemohon' => $request->input('pihak_pemohon', 'Internal Kemenag Sleman'),
+                    'nomor_hp' => $request->input('nomor_hp', '-'),
+                    'penanggung_jawab' => $request->input('penanggung_jawab', $validated['nama_peminjam']),
+                    'jumlah_peserta' => (int) $request->input('jumlah_peserta', 1),
+                    'mulai' => $validated['mulai'],
+                    'selesai' => $validated['selesai'],
+                    'tgl_mulai' => substr($validated['mulai'], 0, 10),
+                    'tgl_selesai' => substr($validated['selesai'], 0, 10),
+                    'waktu_mulai' => strlen($validated['mulai']) >= 16 ? substr($validated['mulai'], 11, 5) : '08:00',
+                    'waktu_selesai' => strlen($validated['selesai']) >= 16 ? substr($validated['selesai'], 11, 5) : '16:00',
+                    'keperluan' => $validated['keperluan'],
+                    'surat_peminjaman' => $suratFilename,
+                    'surat_url' => $suratUrl,
+                    'status' => 'Menunggu Persetujuan',
+                    'petugas' => null,
+                ]);
 
-            foreach ($itemsPayload as $item) {
-                if (\Illuminate\Support\Facades\Schema::hasTable('item_peminjaman')) {
-                    ItemPeminjaman::create([
-                        'id_peminjaman' => $newId,
-                        'item_id' => $item['item_id'],
-                        'jumlah' => $item['jumlah'],
-                    ]);
+                foreach ($itemsPayload as $item) {
+                    if (\Illuminate\Support\Facades\Schema::hasTable('item_peminjaman')) {
+                        ItemPeminjaman::create([
+                            'id_peminjaman' => $newId,
+                            'item_id' => $item['item_id'],
+                            'jumlah' => $item['jumlah'],
+                        ]);
+                    }
+
+                    if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
+                        \App\Models\PeminjamanItem::create([
+                            'peminjaman_id' => $newId,
+                            'item_id' => $item['item_id'],
+                            'jumlah' => $item['jumlah'],
+                        ]);
+                    }
                 }
 
-                if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
-                    \App\Models\PeminjamanItem::create([
-                        'peminjaman_id' => $newId,
-                        'item_id' => $item['item_id'],
-                        'jumlah' => $item['jumlah'],
-                    ]);
-                }
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pengajuan peminjaman berhasil dikirim',
+                    'data' => $peminjaman->load(['items.item', 'itemPeminjaman.item']),
+                ], 201);
+            });
+        } catch (\Throwable $e) {
+            // Clean up orphan file if database transaction fails
+            if ($uploadedFilePath && Storage::disk('local')->exists($uploadedFilePath)) {
+                Storage::disk('local')->delete($uploadedFilePath);
             }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Pengajuan peminjaman berhasil dikirim',
-                'data' => $peminjaman->load(['items.item', 'itemPeminjaman.item']),
-            ], 201);
-        });
+            throw $e;
+        }
     }
 
     private function detectConflicts(string $mulai, string $selesai, array $items): array

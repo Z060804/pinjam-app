@@ -58,6 +58,7 @@ export function MasterDataView<
 }: MasterDataViewProps<T, TPayload>) {
   const [list, setList] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<T | null>(null);
@@ -66,8 +67,13 @@ export function MasterDataView<
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setList(await fetchItems());
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message ?? 'Gagal memuat data dari server.';
+      setLoadError(msg);
+      setList([]);
     } finally {
       setLoading(false);
     }
@@ -186,6 +192,8 @@ export function MasterDataView<
       <MasterDataList
         list={list}
         loading={loading}
+        error={loadError}
+        onRetry={loadData}
         entityKey={entityKey}
         entityName={entityName}
         listTitle={listTitle}

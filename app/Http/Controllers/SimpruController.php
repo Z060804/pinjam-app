@@ -155,9 +155,6 @@ class SimpruController extends Controller
         if (!$isAdmin && auth('sanctum')->check()) {
             $isAdmin = true;
         }
-        if (!$isAdmin && ($request->is('api/master/*') || $request->is('api/admin/*'))) {
-            $isAdmin = true;
-        }
 
         $records = Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
             ->orderBy('tgl_mulai', 'asc')
@@ -606,37 +603,54 @@ class SimpruController extends Controller
             'petugas' => 'nullable|string|max:100',
         ]);
 
-        $peminjaman = Peminjaman::where('id', $id)->orWhere('id_peminjaman', $id)->first();
-        if (!$peminjaman) {
-            return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
-        }
+        return DB::transaction(function () use ($validated, $id) {
+            $peminjaman = Peminjaman::where('id', $id)
+                ->orWhere('id_peminjaman', $id)
+                ->lockForUpdate()
+                ->first();
 
-        // Jika mengubah status menjadi 'Disetujui', pastikan tidak ada bentrok jadwal dengan peminjaman lain
-        if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
-            $conflicts = $this->detectApprovalConflicts($peminjaman);
-            if (!empty($conflicts)) {
-                $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-                return response()->json([
-                    'success' => false,
-                    'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
-                    'conflicts' => $conflicts,
-                ], 422);
+            if (!$peminjaman) {
+                return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
             }
-        }
 
-        $peminjaman->status = $validated['status'];
-        if (isset($validated['petugas'])) {
-            $peminjaman->petugas = $validated['petugas'];
-        } elseif ($validated['status'] === 'Disetujui') {
-            $peminjaman->petugas = 'Admin SiRuang';
-        }
-        $peminjaman->save();
+            // Jika mengubah status menjadi 'Disetujui', kunci master item_jenis dan pastikan tidak ada bentrok
+            if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
+                $itemList = $peminjaman->items->isNotEmpty() ? $peminjaman->items : $peminjaman->itemPeminjaman;
+                $itemIds = $itemList->pluck('item_id')->map(fn($itemId) => (int)$itemId)->filter(fn($id) => $id > 0)->unique()->values()->all();
+                sort($itemIds);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Status peminjaman berhasil diperbarui',
-            'data' => $peminjaman,
-        ]);
+                if (!empty($itemIds)) {
+                    ItemJenis::whereIn('id', $itemIds)
+                        ->orderBy('id', 'asc')
+                        ->lockForUpdate()
+                        ->get();
+                }
+
+                $conflicts = $this->detectApprovalConflicts($peminjaman);
+                if (!empty($conflicts)) {
+                    $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
+                        'conflicts' => $conflicts,
+                    ], 422);
+                }
+            }
+
+            $peminjaman->status = $validated['status'];
+            if (isset($validated['petugas'])) {
+                $peminjaman->petugas = $validated['petugas'];
+            } elseif ($validated['status'] === 'Disetujui') {
+                $peminjaman->petugas = 'Admin SiRuang';
+            }
+            $peminjaman->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Status peminjaman berhasil diperbarui',
+                'data' => $peminjaman,
+            ]);
+        });
     }
 
     /**
