@@ -4,10 +4,11 @@ import { Permohonan, RekapStatusFilter } from '../../../types/admin';
 import { STATUS_CONFIG, STATUS_TABS } from '../statusConfig';
 import { formatDate } from '../../../utils/format';
 
-const JENIS_LABELS: Record<Permohonan['jenis'], string> = {
+const JENIS_LABELS: Record<string, string> = {
   ruangan: 'Ruangan',
   kendaraan: 'Kendaraan',
   perlengkapan: 'Perlengkapan',
+  kombinasi: 'Multi-Item',
 };
 
 interface RekapTableProps {
@@ -93,9 +94,33 @@ export const RekapTable: React.FC<RekapTableProps> = ({
                       <div className="text-[10px] text-slate-400">{p.nomor_hp ?? '-'}</div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                        {JENIS_LABELS[p.jenis]}
-                      </span>
+                      {p.kategori_list && p.kategori_list.length > 1 ? (
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                            Multi-Item ({p.kategori_list.length} Kategori)
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {p.kategori_list.map((k) => (
+                              <span
+                                key={k}
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                                  k === 'ruangan'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : k === 'kendaraan'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}
+                              >
+                                {k.charAt(0).toUpperCase() + k.slice(1)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {JENIS_LABELS[p.jenis] ?? (p.jenis ? p.jenis.charAt(0).toUpperCase() + p.jenis.slice(1) : 'Ruangan')}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-xs text-slate-600 max-w-[130px] truncate">{p.unit_pemohon}</div>
@@ -104,7 +129,9 @@ export const RekapTable: React.FC<RekapTableProps> = ({
                       <div className="text-xs font-semibold text-[#009966] max-w-[160px] truncate">{p.kegiatan}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-xs text-slate-600 max-w-[130px] truncate">{p.item_dipinjam}</div>
+                      <div className="text-xs text-slate-700 max-w-[160px] truncate" title={p.item_dipinjam}>
+                        {p.item_dipinjam}
+                      </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>

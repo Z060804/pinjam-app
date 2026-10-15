@@ -55,7 +55,12 @@ export const RekapPeminjamanView: React.FC = () => {
   const filtered = list
     .filter((p) => {
       const matchStatus = activeTab === 'Semua' || p.status === activeTab;
-      const matchJenis = jenisFilter === 'Semua' || p.jenis === jenisFilter;
+      const matchJenis =
+        jenisFilter === 'Semua' ||
+        p.jenis === jenisFilter ||
+        Boolean(p.kategori_list?.includes(jenisFilter)) ||
+        (jenisFilter === 'kombinasi' && (Boolean(p.is_multi_item) || (p.kategori_list ? p.kategori_list.length > 1 : false))) ||
+        Boolean(p.items?.some((it) => it.kategori === jenisFilter));
       const matchFrom = !dateFrom || p.tgl_mulai >= dateFrom;
       const matchTo = !dateTo || p.tgl_mulai <= dateTo;
       return matchStatus && matchJenis && matchFrom && matchTo;

@@ -18,7 +18,7 @@ export const EventDetailBody: React.FC<EventDetailBodyProps> = ({ event }) => {
   const itemName = event.item_dipinjam ?? event.ruangan ?? 'Sarana Prasarana';
   const pemohon = event.nama_pemohon ?? event.nama_peminjam;
   const unit = event.unit_pemohon ?? event.unit_kerja;
-  const labelKategori = event.jenis === 'kendaraan' ? 'KENDARAAN' : event.jenis === 'perlengkapan' ? 'PERLENGKAPAN' : 'RUANGAN / ITEM';
+  const labelKategori = event.jenis === 'kendaraan' ? 'KENDARAAN' : event.jenis === 'perlengkapan' ? 'PERLENGKAPAN' : event.jenis === 'kombinasi' ? 'MULTI-ITEM (LINTAS KATEGORI)' : 'RUANGAN / ITEM';
 
   return (
     <div className="py-5 space-y-4">

@@ -174,19 +174,24 @@ class SimpruController extends Controller
         };
 
         $formatted = $records->map(function ($p) use ($isAdmin, $maskName) {
-            $itemList = $p->items->isNotEmpty() ? $p->items : $p->itemPeminjaman;
+            $allItems = $p->items->concat($p->itemPeminjaman)->filter(fn($it) => !empty($it->item_id));
+            $itemList = $allItems->unique(fn($it) => (int)$it->item_id)->values();
 
-            $jenisIds = $itemList
-                ->map(fn ($pi) => $pi->item?->id_jenis)
+            $categoryMap = [
+                1 => 'ruangan',
+                2 => 'kendaraan',
+                3 => 'perlengkapan',
+            ];
+
+            $kategoriList = $itemList
+                ->map(fn($pi) => $categoryMap[$pi->item?->id_jenis] ?? strtolower($pi->item?->jenis?->nama ?? 'ruangan'))
                 ->filter()
-                ->unique();
+                ->unique()
+                ->values()
+                ->all();
 
-            $jenisName = match (true) {
-                $jenisIds->contains(1) => 'ruangan',
-                $jenisIds->contains(2) => 'kendaraan',
-                $jenisIds->contains(3) => 'perlengkapan',
-                default => 'ruangan',
-            };
+            $isMulti = count($kategoriList) > 1;
+            $jenisName = $isMulti ? 'kombinasi' : ($kategoriList[0] ?? 'ruangan');
 
             $itemNames = $itemList->map(function ($pi) {
                 return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
@@ -228,15 +233,19 @@ class SimpruController extends Controller
                 'surat_url' => $isAdmin ? ($p->surat_url ?? $p->surat_peminjaman) : null,
                 'surat_peminjaman' => $isAdmin ? ($p->surat_peminjaman ?? $p->surat_url) : null,
                 'jenis' => $jenisName,
+                'kategori_list' => $kategoriList,
+                'is_multi_item' => $isMulti,
                 'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
                 'petugas' => $isAdmin ? $p->petugas : null,
                 'items' => $itemList->map(fn($it) => [
                     'id' => $it->id,
                     'item_id' => $it->item_id,
                     'jumlah' => $it->jumlah,
-                    'nama' => $it->item?->nama,
+                    'nama' => $it->item?->nama ?? 'Item',
                     'registration_id' => $it->item?->registration_id,
-                ]),
+                    'id_jenis' => $it->item?->id_jenis,
+                    'kategori' => $categoryMap[$it->item?->id_jenis] ?? strtolower($it->item?->jenis?->nama ?? 'ruangan'),
+                ])->values()->all(),
             ];
         });
 
@@ -274,19 +283,24 @@ class SimpruController extends Controller
             ], 404);
         }
 
-        $itemList = $peminjaman->items->isNotEmpty() ? $peminjaman->items : $peminjaman->itemPeminjaman;
+        $allItems = $peminjaman->items->concat($peminjaman->itemPeminjaman)->filter(fn($it) => !empty($it->item_id));
+        $itemList = $allItems->unique(fn($it) => (int)$it->item_id)->values();
 
-        $jenisIds = $itemList
-            ->map(fn ($pi) => $pi->item?->id_jenis)
+        $categoryMap = [
+            1 => 'ruangan',
+            2 => 'kendaraan',
+            3 => 'perlengkapan',
+        ];
+
+        $kategoriList = $itemList
+            ->map(fn($pi) => $categoryMap[$pi->item?->id_jenis] ?? strtolower($pi->item?->jenis?->nama ?? 'ruangan'))
             ->filter()
-            ->unique();
+            ->unique()
+            ->values()
+            ->all();
 
-        $jenisName = match (true) {
-            $jenisIds->contains(1) => 'ruangan',
-            $jenisIds->contains(2) => 'kendaraan',
-            $jenisIds->contains(3) => 'perlengkapan',
-            default => 'ruangan',
-        };
+        $isMulti = count($kategoriList) > 1;
+        $jenisName = $isMulti ? 'kombinasi' : ($kategoriList[0] ?? 'ruangan');
 
         $itemNames = $itemList->map(function ($pi) {
             return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
@@ -338,6 +352,8 @@ class SimpruController extends Controller
             'status' => $peminjaman->status,
             'petugas' => $peminjaman->petugas,
             'jenis' => $jenisName,
+            'kategori_list' => $kategoriList,
+            'is_multi_item' => $isMulti,
             'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
             'ruangan' => $itemNames ?: 'Sarana Prasarana',
             'items' => $itemList->map(fn($it) => [
@@ -345,8 +361,12 @@ class SimpruController extends Controller
                 'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
                 'item_id' => $it->item_id,
                 'jumlah' => $it->jumlah,
+                'nama' => $it->item?->nama ?? 'Item',
+                'registration_id' => $it->item?->registration_id,
+                'id_jenis' => $it->item?->id_jenis,
+                'kategori' => $categoryMap[$it->item?->id_jenis] ?? strtolower($it->item?->jenis?->nama ?? 'ruangan'),
                 'item' => $it->item,
-            ]),
+            ])->values()->all(),
         ];
 
         return response()->json([

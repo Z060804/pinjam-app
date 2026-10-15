@@ -28,8 +28,19 @@ export interface Perlengkapan {
 }
 
 // ─── Permohonan / Rekap ──────────────────────────────────────────────────────
+export interface PermohonanItemDetail {
+  id?: number;
+  item_id: number;
+  jumlah: number;
+  nama: string;
+  registration_id?: string | null;
+  id_jenis?: number;
+  kategori?: string;
+}
+
 export interface Permohonan {
   id: string;
+  id_peminjaman?: string;
   tgl_pengajuan: string;
   pihak_pemohon: string; // e.g. "Internal Kemenag Sleman"
   unit_pemohon: string;
@@ -47,9 +58,12 @@ export interface Permohonan {
   status: 'Menunggu Persetujuan' | 'Disetujui' | 'Tidak Disetujui' | 'Dibatalkan';
   surat_url: string | null;
   surat_peminjaman?: string | null;
-  // generic: for perlengkapan / kendaraan booking
-  jenis: 'ruangan' | 'kendaraan' | 'perlengkapan';
+  // generic: for perlengkapan / kendaraan / ruangan / kombinasi
+  jenis: 'ruangan' | 'kendaraan' | 'perlengkapan' | 'kombinasi' | string;
+  kategori_list?: string[];
+  is_multi_item?: boolean;
   item_dipinjam: string; // nama item
+  items?: PermohonanItemDetail[];
 }
 
 export type AdminActiveTab = 'rekap' | 'ruangan' | 'kendaraan' | 'perlengkapan';

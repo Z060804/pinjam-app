@@ -67,10 +67,11 @@ export const RekapFilterBar: React.FC<RekapFilterBarProps> = ({
               onChange={(e) => onJenisFilterChange(e.target.value as 'Semua' | Permohonan['jenis'])}
               className="w-full appearance-none px-3 pr-8 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#009966]/30 focus:border-[#009966] transition"
             >
-              <option value="Semua">Semua Jenis</option>
+              <option value="Semua">Semua Jenis Layanan</option>
               <option value="ruangan">Ruangan</option>
               <option value="kendaraan">Kendaraan</option>
               <option value="perlengkapan">Perlengkapan</option>
+              <option value="kombinasi">Multi-Item (Kombinasi)</option>
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
           </div>
