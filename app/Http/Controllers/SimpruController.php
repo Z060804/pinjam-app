@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ItemJenis;
 use App\Models\MasterJenis;
 use App\Models\Peminjaman;
-use App\Models\PeminjamanItem;
+use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -15,6 +15,10 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class SimpruController extends Controller
 {
+    public function __construct(
+        protected BookingService $bookingService
+    ) {}
+
     /**
      * Get all master categories (Ruangan, Kendaraan, Perlengkapan).
      */
@@ -136,16 +140,12 @@ class SimpruController extends Controller
     }
 
     /**
-     * Admin: Get all peminjaman records formatted for Rekap Peminjaman.
-     */
-    /**
-     * Admin / Public: Get all peminjaman records.
+     * Admin / Public: Get all peminjaman records for Rekap Peminjaman.
      * Untuk publik: data NIP, nomor HP, dan berkas surat disembunyikan untuk menjaga privasi pemohon.
      * Untuk admin terautentikasi: data ditampilkan lengkap untuk keperluan rekap.
      */
     public function getAllPeminjaman(Request $request): JsonResponse
     {
-        // Hanya menerima autentikasi admin via Authorization: Bearer header
         $token = $request->bearerToken();
         $isAdmin = false;
         if ($token) {
@@ -174,24 +174,12 @@ class SimpruController extends Controller
         };
 
         $formatted = $records->map(function ($p) use ($isAdmin, $maskName) {
-            $allItems = $p->items->concat($p->itemPeminjaman)->filter(fn($it) => !empty($it->item_id));
-            $itemList = $allItems->unique(fn($it) => (int)$it->item_id)->values();
+            $itemList = $this->bookingService->consolidateItems($p);
+            $categoryMeta = $this->bookingService->resolveCategoryMetadata($itemList);
 
-            $categoryMap = [
-                1 => 'ruangan',
-                2 => 'kendaraan',
-                3 => 'perlengkapan',
-            ];
-
-            $kategoriList = $itemList
-                ->map(fn($pi) => $categoryMap[$pi->item?->id_jenis] ?? strtolower($pi->item?->jenis?->nama ?? 'ruangan'))
-                ->filter()
-                ->unique()
-                ->values()
-                ->all();
-
-            $isMulti = count($kategoriList) > 1;
-            $jenisName = $isMulti ? 'kombinasi' : ($kategoriList[0] ?? 'ruangan');
+            $kategoriList = $categoryMeta['kategori_list'];
+            $isMulti = $categoryMeta['is_multi_item'];
+            $jenisName = $categoryMeta['jenis'];
 
             $itemNames = $itemList->map(function ($pi) {
                 return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
@@ -244,7 +232,7 @@ class SimpruController extends Controller
                     'nama' => $it->item?->nama ?? 'Item',
                     'registration_id' => $it->item?->registration_id,
                     'id_jenis' => $it->item?->id_jenis,
-                    'kategori' => $categoryMap[$it->item?->id_jenis] ?? strtolower($it->item?->jenis?->nama ?? 'ruangan'),
+                    'kategori' => BookingService::CATEGORY_MAP[$it->item?->id_jenis] ?? strtolower($it->item?->jenis?->nama ?? 'ruangan'),
                 ])->values()->all(),
             ];
         });
@@ -260,7 +248,6 @@ class SimpruController extends Controller
      */
     public function getPeminjamanById(Request $request, string $id): JsonResponse
     {
-        // Hanya menerima autentikasi admin via Authorization: Bearer header
         $token = $request->bearerToken();
         $isAdmin = false;
         if ($token) {
@@ -283,24 +270,12 @@ class SimpruController extends Controller
             ], 404);
         }
 
-        $allItems = $peminjaman->items->concat($peminjaman->itemPeminjaman)->filter(fn($it) => !empty($it->item_id));
-        $itemList = $allItems->unique(fn($it) => (int)$it->item_id)->values();
+        $itemList = $this->bookingService->consolidateItems($peminjaman);
+        $categoryMeta = $this->bookingService->resolveCategoryMetadata($itemList);
 
-        $categoryMap = [
-            1 => 'ruangan',
-            2 => 'kendaraan',
-            3 => 'perlengkapan',
-        ];
-
-        $kategoriList = $itemList
-            ->map(fn($pi) => $categoryMap[$pi->item?->id_jenis] ?? strtolower($pi->item?->jenis?->nama ?? 'ruangan'))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        $isMulti = count($kategoriList) > 1;
-        $jenisName = $isMulti ? 'kombinasi' : ($kategoriList[0] ?? 'ruangan');
+        $kategoriList = $categoryMeta['kategori_list'];
+        $isMulti = $categoryMeta['is_multi_item'];
+        $jenisName = $categoryMeta['jenis'];
 
         $itemNames = $itemList->map(function ($pi) {
             return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
@@ -315,8 +290,6 @@ class SimpruController extends Controller
         $nipRaw = (string) ($peminjaman->nip ?? '');
         $hpRaw = (string) ($peminjaman->nomor_hp ?? '');
 
-        // Customer melihat nama pemohon asli dan NIP asli
-        // Nomor HP dan Penanggung Jawab Kegiatan hanya dimunculkan untuk Admin
         $namaDisplay = $rawName ?: '-';
         $nipDisplay = $nipRaw ?: '-';
         $hpDisplay = $isAdmin ? ($hpRaw ?: '-') : null;
@@ -364,7 +337,7 @@ class SimpruController extends Controller
                 'nama' => $it->item?->nama ?? 'Item',
                 'registration_id' => $it->item?->registration_id,
                 'id_jenis' => $it->item?->id_jenis,
-                'kategori' => $categoryMap[$it->item?->id_jenis] ?? strtolower($it->item?->jenis?->nama ?? 'ruangan'),
+                'kategori' => BookingService::CATEGORY_MAP[$it->item?->id_jenis] ?? strtolower($it->item?->jenis?->nama ?? 'ruangan'),
                 'item' => $it->item,
             ])->values()->all(),
         ];
@@ -508,112 +481,6 @@ class SimpruController extends Controller
     }
 
     /**
-     * Customer: Submit new loan application (stores into database).
-     */
-    public function storePeminjaman(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'nip' => 'nullable|string|max:50',
-            'nama_peminjam' => 'required|string|max:255',
-            'unit_kerja' => 'required|string|max:255',
-            'mulai' => 'required|string',
-            'selesai' => 'required|string',
-            'keperluan' => 'required|string',
-            'surat_peminjaman_name' => 'nullable|string|max:255',
-            'selected_items' => 'required|array|min:1',
-            'nomor_hp' => 'nullable|string|max:30',
-            'pihak_pemohon' => 'nullable|string|max:100',
-        ]);
-
-        return DB::transaction(function () use ($validated) {
-            $now = Carbon::now();
-            $prefix = 'PMJ-' . $now->format('Ym');
-
-            // Nomor urut diambil dari sequence TERBESAR (bukan count() + 1 yang rentan
-            // tabrakan ID jika ada data yang terhapus). Ditambah loop verifikasi exists()
-            // untuk menjamin ID selalu unik dan tidak akan pernah bentrok.
-            $lastSeq = (int) (Peminjaman::where('id', 'like', "{$prefix}-%")
-                ->lockForUpdate()
-                ->pluck('id')
-                ->map(fn ($id) => (int) substr($id, strlen($prefix) + 1))
-                ->max() ?? 0);
-
-            do {
-                $lastSeq++;
-                $newId = sprintf('%s-%03d', $prefix, $lastSeq);
-            } while (Peminjaman::where('id', $newId)->exists());
-
-            // Extract dates and times
-            $mulaiStr = str_replace('T', ' ', $validated['mulai']);
-            $selesaiStr = str_replace('T', ' ', $validated['selesai']);
-
-            $tglMulai = substr($mulaiStr, 0, 10);
-            $waktuMulai = strlen($mulaiStr) >= 16 ? substr($mulaiStr, 11, 5) : '08:00';
-
-            $tglSelesai = substr($selesaiStr, 0, 10);
-            $waktuSelesai = strlen($selesaiStr) >= 16 ? substr($selesaiStr, 11, 5) : '16:00';
-
-            $peminjaman = Peminjaman::create([
-                'id' => $newId,
-                'tgl_pengajuan' => $now->toDateString(),
-                'nip' => $validated['nip'] ?? null,
-                'nama_pemohon' => $validated['nama_peminjam'],
-                'unit_pemohon' => $validated['unit_kerja'],
-                'pihak_pemohon' => $validated['pihak_pemohon'] ?? 'Internal Kemenag Sleman',
-                'nomor_hp' => $validated['nomor_hp'] ?? null,
-                'penanggung_jawab' => $validated['nama_peminjam'],
-                'jumlah_peserta' => 1,
-                'tgl_mulai' => $tglMulai,
-                'tgl_selesai' => $tglSelesai,
-                'waktu_mulai' => $waktuMulai,
-                'waktu_selesai' => $waktuSelesai,
-                'keperluan' => $validated['keperluan'],
-                'surat_url' => $validated['surat_peminjaman_name'] ?? 'surat_permohonan.pdf',
-                'status' => 'Menunggu Persetujuan',
-                'petugas' => null,
-            ]);
-
-            // Insert items dan deteksi kategori seluruh item yang dipinjam
-            $itemIds = [];
-            foreach ($validated['selected_items'] as $itemData) {
-                // Mendukung baik nested payload ['item' => ['id' => ...]] maupun flat ['item_id' => ...]
-                $itemRef = is_array($itemData['item'] ?? null) ? $itemData['item'] : $itemData;
-                $itemId = is_array($itemRef) ? ($itemRef['id'] ?? $itemRef['item_id'] ?? null) : null;
-                $qty = max(1, (int) ($itemData['jumlah'] ?? $itemRef['jumlah'] ?? 1));
-
-                if ($itemId) {
-                    $itemIds[] = $itemId;
-                    PeminjamanItem::create([
-                        'peminjaman_id' => $newId,
-                        'item_id' => $itemId,
-                        'jumlah' => $qty,
-                    ]);
-                }
-            }
-
-            // Tentukan label jenis utama berdasarkan seluruh item yang dipinjam (ruangan > kendaraan > perlengkapan)
-            // bukan hanya membaca dari item pertama yang berada di keranjang.
-            $jenisIds = ItemJenis::whereIn('id', $itemIds)->pluck('id_jenis');
-            $primaryJenis = match (true) {
-                $jenisIds->contains(1) => 'ruangan',
-                $jenisIds->contains(2) => 'kendaraan',
-                $jenisIds->contains(3) => 'perlengkapan',
-                default => 'ruangan',
-            };
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Pengajuan peminjaman berhasil disimpan ke database',
-                'data' => [
-                    'id_peminjaman' => $newId,
-                    'status' => 'Menunggu Persetujuan',
-                    'jenis' => $primaryJenis,
-                ],
-            ], 201);
-        });
-    }
-
-    /**
      * Admin: Update loan approval status.
      */
     public function updateStatus(Request $request, string $id): JsonResponse
@@ -633,37 +500,23 @@ class SimpruController extends Controller
                 return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
             }
 
-            // Jika mengubah status menjadi 'Disetujui', kunci master item_jenis dan pastikan tidak ada bentrok
+            // Jika status Disetujui, delegasikan ke BookingService untuk pencegahan double-booking & row-lock
             if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
-                $itemList = $peminjaman->items->isNotEmpty() ? $peminjaman->items : $peminjaman->itemPeminjaman;
-                $itemIds = $itemList->pluck('item_id')->map(fn($itemId) => (int)$itemId)->filter(fn($id) => $id > 0)->unique()->values()->all();
-                sort($itemIds);
-
-                if (!empty($itemIds)) {
-                    ItemJenis::whereIn('id', $itemIds)
-                        ->orderBy('id', 'asc')
-                        ->lockForUpdate()
-                        ->get();
-                }
-
-                $conflicts = $this->detectApprovalConflicts($peminjaman);
-                if (!empty($conflicts)) {
-                    $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+                $result = $this->bookingService->approvePeminjaman($peminjaman, $validated['petugas'] ?? null);
+                if (!$result['success']) {
                     return response()->json([
                         'success' => false,
-                        'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
-                        'conflicts' => $conflicts,
+                        'message' => $result['message'],
+                        'conflicts' => $result['conflicts'],
                     ], 422);
                 }
+            } else {
+                $peminjaman->status = $validated['status'];
+                if (isset($validated['petugas'])) {
+                    $peminjaman->petugas = $validated['petugas'];
+                }
+                $peminjaman->save();
             }
-
-            $peminjaman->status = $validated['status'];
-            if (isset($validated['petugas'])) {
-                $peminjaman->petugas = $validated['petugas'];
-            } elseif ($validated['status'] === 'Disetujui') {
-                $peminjaman->petugas = 'Admin SiRuang';
-            }
-            $peminjaman->save();
 
             return response()->json([
                 'success' => true,
@@ -671,80 +524,5 @@ class SimpruController extends Controller
                 'data' => $peminjaman,
             ]);
         });
-    }
-
-    /**
-     * Deteksi bentrok jadwal saat admin hendak menyetujui permohonan peminjaman.
-     */
-    protected function detectApprovalConflicts(Peminjaman $peminjaman): array
-    {
-        $conflicts = [];
-        $mulaiStr = $peminjaman->mulai ?: ($peminjaman->tgl_mulai . ' ' . ($peminjaman->waktu_mulai ?: '08:00'));
-        $selesaiStr = $peminjaman->selesai ?: ($peminjaman->tgl_selesai . ' ' . ($peminjaman->waktu_selesai ?: '16:00'));
-
-        $mulaiCarbon = Carbon::parse($mulaiStr);
-        $selesaiCarbon = Carbon::parse($selesaiStr);
-
-        $currentId = $peminjaman->id_peminjaman ?? $peminjaman->id;
-
-        $overlappingBookings = Peminjaman::where('status', 'Disetujui')
-            ->where(function ($query) use ($currentId) {
-                $query->where('id_peminjaman', '!=', $currentId)
-                      ->where('id', '!=', $currentId);
-            })
-            ->where(function ($query) use ($mulaiCarbon, $selesaiCarbon) {
-                $query->where('mulai', '<', $selesaiCarbon)
-                      ->where('selesai', '>', $mulaiCarbon);
-            })
-            ->with(['items.item', 'itemPeminjaman.item'])
-            ->get();
-
-        $itemList = $peminjaman->items->isNotEmpty() ? $peminjaman->items : $peminjaman->itemPeminjaman;
-
-        $reqTotals = [];
-        foreach ($itemList as $it) {
-            $itemId = (int) $it->item_id;
-            $qty = (int) $it->jumlah;
-            $reqTotals[$itemId] = ($reqTotals[$itemId] ?? 0) + $qty;
-        }
-
-        foreach ($reqTotals as $itemId => $reqQty) {
-            $itemModel = ItemJenis::find($itemId);
-            if (!$itemModel) {
-                continue;
-            }
-
-            $bookedQty = 0;
-            $conflictDetails = [];
-
-            foreach ($overlappingBookings as $booking) {
-                $bItems = $booking->items->isNotEmpty() ? $booking->items : $booking->itemPeminjaman;
-                foreach ($bItems as $bookedItem) {
-                    if ((int) $bookedItem->item_id === $itemId) {
-                        $bookedQty += (int) $bookedItem->jumlah;
-                        $conflictDetails[] = [
-                            'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
-                            'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
-                            'mulai' => (string) $booking->mulai,
-                            'selesai' => (string) $booking->selesai,
-                            'keperluan' => $booking->keperluan,
-                        ];
-                    }
-                }
-            }
-
-            if (($bookedQty + $reqQty) > $itemModel->quantity) {
-                $conflicts[] = [
-                    'item_id' => $itemId,
-                    'item_nama' => $itemModel->nama,
-                    'kapasitas_total' => $itemModel->quantity,
-                    'sudah_dipinjam' => $bookedQty,
-                    'diminta' => $reqQty,
-                    'overlapping_bookings' => $conflictDetails,
-                ];
-            }
-        }
-
-        return $conflicts;
     }
 }

@@ -2,47 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MasterJenis;
 use App\Models\ItemJenis;
-use App\Models\Peminjaman;
 use App\Models\ItemPeminjaman;
+use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Validator;
 
 class PeminjamanController extends Controller
 {
-    public function getMasterJenis(): JsonResponse
-    {
-        return response()->json([
-            'success' => true,
-            'data' => MasterJenis::all(),
-        ]);
-    }
+    public function __construct(
+        protected BookingService $bookingService
+    ) {}
 
-    public function getItemJenis(Request $request): JsonResponse
-    {
-        $query = ItemJenis::query();
-        if ($request->has('id_jenis') && $request->filled('id_jenis')) {
-            $query->where('id_jenis', $request->query('id_jenis'));
-        }
-        return response()->json([
-            'success' => true,
-            'data' => $query->get(),
-        ]);
-    }
-
-    public function getAllPeminjaman(): JsonResponse
-    {
-        return response()->json([
-            'success' => true,
-            'data' => Peminjaman::orderByDesc('tgl_pengajuan')->get(),
-        ]);
-    }
-
+    /**
+     * Get all item peminjaman relations (historical data).
+     */
     public function getItemPeminjaman(): JsonResponse
     {
         return response()->json([
@@ -51,22 +27,9 @@ class PeminjamanController extends Controller
         ]);
     }
 
-    public function getPeminjamanById(string $id): JsonResponse
-    {
-        $peminjaman = Peminjaman::with('items.item')->find(trim($id));
-        if (!$peminjaman) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Peminjaman tidak ditemukan',
-            ], 404);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => $peminjaman,
-        ]);
-    }
-
+    /**
+     * Endpoint pengecekan bentrok jadwal secara remote untuk kalkulasi ketersediaan live.
+     */
     public function checkConflict(Request $request): JsonResponse
     {
         $request->validate([
@@ -77,21 +40,12 @@ class PeminjamanController extends Controller
             'items.*.jumlah' => 'required|integer|min:1',
         ]);
 
-        // Gabungkan jumlah item dengan ID yang sama sebelum pengecekan
-        $aggregated = [];
-        foreach ($request->input('items') as $item) {
-            $id = (int) $item['item_id'];
-            $qty = (int) $item['jumlah'];
-            if (!isset($aggregated[$id])) {
-                $aggregated[$id] = ['item_id' => $id, 'jumlah' => 0];
-            }
-            $aggregated[$id]['jumlah'] += $qty;
-        }
+        $aggregated = $this->aggregateItemsPayload($request->input('items'));
 
-        $conflicts = $this->detectConflicts(
+        $conflicts = $this->bookingService->detectConflicts(
             $request->input('mulai'),
             $request->input('selesai'),
-            array_values($aggregated)
+            $aggregated
         );
 
         if (!empty($conflicts)) {
@@ -110,9 +64,72 @@ class PeminjamanController extends Controller
         ]);
     }
 
+    /**
+     * Pengajuan peminjaman baru oleh pemohon (Customer submission).
+     */
     public function store(Request $request): JsonResponse
     {
-        // Mendukung selected_items dalam bentuk array atau JSON string (dari FormData upload berkas)
+        $this->normalizeSelectedItemsInput($request);
+
+        $validator = $this->makeStoreValidator($request);
+        $validated = $validator->validate();
+
+        $itemsPayload = $this->aggregateItemsPayload($validated['selected_items']);
+
+        // Simpan file berkas surat jika ada yang diunggah secara nyata (ke disk private 'local')
+        $suratFilename = null;
+        $suratUrl = null;
+        $uploadedFilePath = null;
+
+        if ($request->hasFile('surat_file')) {
+            $file = $request->file('surat_file');
+            $originalName = $file->getClientOriginalName();
+            $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $originalName);
+            $storedPath = $file->storeAs('surat', $safeName, 'local');
+            $uploadedFilePath = $storedPath;
+            $suratFilename = $originalName;
+            $suratUrl = $storedPath;
+        }
+
+        try {
+            $result = $this->bookingService->createPeminjaman(
+                $validated,
+                $itemsPayload,
+                $suratFilename,
+                $suratUrl,
+                [
+                    'pihak_pemohon' => $request->input('pihak_pemohon', 'Internal Kemenag Sleman'),
+                    'nomor_hp' => $request->input('nomor_hp', '-'),
+                    'penanggung_jawab' => $request->input('penanggung_jawab', $validated['nama_peminjam']),
+                    'jumlah_peserta' => (int) $request->input('jumlah_peserta', 1),
+                ]
+            );
+
+            if (!$result['success']) {
+                $this->cleanupUploadedFile($uploadedFilePath);
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'],
+                    'conflicts' => $result['conflicts'],
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pengajuan peminjaman berhasil dikirim',
+                'data' => $result['peminjaman'],
+            ], 201);
+        } catch (\Throwable $e) {
+            $this->cleanupUploadedFile($uploadedFilePath);
+            throw $e;
+        }
+    }
+
+    /**
+     * Normalisasi payload selected_items (string JSON atau array).
+     */
+    protected function normalizeSelectedItemsInput(Request $request): void
+    {
         if ($request->has('selected_items') && is_string($request->input('selected_items'))) {
             $decoded = json_decode($request->input('selected_items'), true);
             if (is_array($decoded)) {
@@ -130,7 +147,13 @@ class PeminjamanController extends Controller
                 $request->merge(['selected_items' => $rawItems]);
             }
         }
+    }
 
+    /**
+     * Bentuk Validator untuk method store termasuk validasi integritas file PDF dan stok item.
+     */
+    protected function makeStoreValidator(Request $request): \Illuminate\Contracts\Validation\Validator
+    {
         $validator = Validator::make($request->all(), [
             'nip' => 'nullable|string|max:50',
             'nama_peminjam' => 'required|string|max:150',
@@ -152,288 +175,139 @@ class PeminjamanController extends Controller
             'surat_file.max' => 'Ukuran berkas surat permohonan maksimal 1 MB (1.048.576 byte).',
         ]);
 
-        $validator->after(function ($validator) use ($request) {
-            // Validasi integritas berkas surat: wajib dokumen PDF valid dan ukuran <= 1 MB (1.048.576 byte)
-            if ($request->hasFile('surat_file')) {
-                $file = $request->file('surat_file');
-                if ($file) {
-                    if (!$file->isValid()) {
-                        $validator->errors()->add('surat_file', 'Unggahan berkas surat gagal atau berkas rusak.');
-                    } else {
-                        // Batasi ukuran riil maksimal 1 MB (1.048.576 byte)
-                        if ($file->getSize() > 1048576) {
-                            $validator->errors()->add('surat_file', 'Ukuran berkas surat permohonan melebihi batas maksimal 1 MB (1.048.576 byte).');
-                        }
+        $validator->after(function ($v) use ($request) {
+            $this->validateSuratFileIntegrity($v, $request);
+            $this->validateSelectedItemsStock($v, $request);
+        });
 
-                        // Periksa MIME type asli via PHP finfo
-                        $realPath = $file->getRealPath();
-                        if ($realPath && file_exists($realPath)) {
-                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                            $mime = finfo_file($finfo, $realPath);
-                            finfo_close($finfo);
+        return $validator;
+    }
 
-                            if (!in_array($mime, ['application/pdf', 'application/x-pdf', 'application/acrobat'])) {
-                                $validator->errors()->add('surat_file', 'Format berkas surat tidak sah. Berkas harus berupa dokumen PDF yang sebenarnya.');
-                            } else {
-                                // Periksa magic header signature PDF (%PDF-)
-                                $handle = @fopen($realPath, 'rb');
-                                if ($handle) {
-                                    $header = fread($handle, 1024);
-                                    fclose($handle);
-                                    if (!str_contains($header, '%PDF-')) {
-                                        $validator->errors()->add('surat_file', 'Struktur berkas tidak valid sebagai dokumen PDF.');
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    /**
+     * Validasi biner integritas file PDF (magic header %PDF- dan ukuran riil <= 1 MiB).
+     */
+    protected function validateSuratFileIntegrity($validator, Request $request): void
+    {
+        if (!$request->hasFile('surat_file')) {
+            return;
+        }
 
-            $selectedItems = $request->input('selected_items');
-            if (!is_array($selectedItems)) {
+        $file = $request->file('surat_file');
+        if (!$file) {
+            return;
+        }
+
+        if (!$file->isValid()) {
+            $validator->errors()->add('surat_file', 'Unggahan berkas surat gagal atau berkas rusak.');
+            return;
+        }
+
+        if ($file->getSize() > 1048576) {
+            $validator->errors()->add('surat_file', 'Ukuran berkas surat permohonan melebihi batas maksimal 1 MB (1.048.576 byte).');
+            return;
+        }
+
+        $realPath = $file->getRealPath();
+        if ($realPath && file_exists($realPath)) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = finfo_file($finfo, $realPath);
+            finfo_close($finfo);
+
+            if (!in_array($mime, ['application/pdf', 'application/x-pdf', 'application/acrobat'])) {
+                $validator->errors()->add('surat_file', 'Format berkas surat tidak sah. Berkas harus berupa dokumen PDF yang sebenarnya.');
                 return;
             }
 
-            $itemTotals = [];
-
-            foreach ($selectedItems as $index => $selected) {
-                if (!is_array($selected)) {
-                    $validator->errors()->add("selected_items.{$index}", "Format data item ke-" . ($index + 1) . " tidak valid.");
-                    continue;
-                }
-
-                $itemId = $selected['item']['id'] ?? $selected['item_id'] ?? null;
-                $jumlah = $selected['jumlah'] ?? 1;
-
-                if (empty($itemId) || !is_numeric($itemId)) {
-                    $validator->errors()->add("selected_items.{$index}.item_id", "ID item pada baris ke-" . ($index + 1) . " wajib diisi.");
-                    continue;
-                }
-
-                $exists = ItemJenis::where('id', (int) $itemId)->exists();
-                if (!$exists) {
-                    $validator->errors()->add("selected_items.{$index}.item_id", "Item dengan ID {$itemId} pada baris ke-" . ($index + 1) . " tidak ditemukan dalam master sarana prasarana.");
-                }
-
-                if (!is_numeric($jumlah) || (int) $jumlah < 1) {
-                    $validator->errors()->add("selected_items.{$index}.jumlah", "Jumlah peminjaman pada baris ke-" . ($index + 1) . " minimal 1 unit.");
-                } else {
-                    $idInt = (int) $itemId;
-                    $itemTotals[$idInt] = ($itemTotals[$idInt] ?? 0) + (int) $jumlah;
+            $handle = @fopen($realPath, 'rb');
+            if ($handle) {
+                $header = fread($handle, 1024);
+                fclose($handle);
+                if (!str_contains($header, '%PDF-')) {
+                    $validator->errors()->add('surat_file', 'Struktur berkas tidak valid sebagai dokumen PDF.');
                 }
             }
+        }
+    }
 
-            // Validasi total stok: jika item yang sama dikirim beberapa kali atau jumlah melebihi kapasitas stok
-            foreach ($itemTotals as $id => $totalQty) {
-                $itemModel = ItemJenis::find($id);
-                if ($itemModel && $totalQty > $itemModel->quantity) {
-                    $validator->errors()->add("selected_items", "Total jumlah yang diminta untuk {$itemModel->nama} ({$totalQty} unit) melebihi kapasitas/stok yang tersedia ({$itemModel->quantity} unit).");
-                }
+    /**
+     * Validasi ketersediaan stok master sarana prasarana.
+     */
+    protected function validateSelectedItemsStock($validator, Request $request): void
+    {
+        $selectedItems = $request->input('selected_items');
+        if (!is_array($selectedItems)) {
+            return;
+        }
+
+        $itemTotals = [];
+        foreach ($selectedItems as $index => $selected) {
+            if (!is_array($selected)) {
+                $validator->errors()->add("selected_items.{$index}", 'Format data item ke-' . ($index + 1) . ' tidak valid.');
+                continue;
             }
-        });
 
-        $validated = $validator->validate();
+            $itemId = $selected['item']['id'] ?? $selected['item_id'] ?? null;
+            $jumlah = $selected['jumlah'] ?? 1;
 
-        // Gabungkan duplicate item IDs ke dalam satu baris payload
-        $aggregatedPayload = [];
-        foreach ($validated['selected_items'] as $selected) {
-            $itemId = (int) ($selected['item']['id'] ?? $selected['item_id'] ?? 0);
-            $jumlah = max(1, (int) ($selected['jumlah'] ?? 1));
-            if (!isset($aggregatedPayload[$itemId])) {
-                $aggregatedPayload[$itemId] = [
+            if (empty($itemId) || !is_numeric($itemId)) {
+                $validator->errors()->add("selected_items.{$index}.item_id", 'ID item pada baris ke-' . ($index + 1) . ' wajib diisi.');
+                continue;
+            }
+
+            $exists = ItemJenis::where('id', (int) $itemId)->exists();
+            if (!$exists) {
+                $validator->errors()->add("selected_items.{$index}.item_id", "Item dengan ID {$itemId} pada baris ke-" . ($index + 1) . ' tidak ditemukan dalam master sarana prasarana.');
+            }
+
+            if (!is_numeric($jumlah) || (int) $jumlah < 1) {
+                $validator->errors()->add("selected_items.{$index}.jumlah", 'Jumlah peminjaman pada baris ke-' . ($index + 1) . ' minimal 1 unit.');
+            } else {
+                $idInt = (int) $itemId;
+                $itemTotals[$idInt] = ($itemTotals[$idInt] ?? 0) + (int) $jumlah;
+            }
+        }
+
+        foreach ($itemTotals as $id => $totalQty) {
+            $itemModel = ItemJenis::find($id);
+            if ($itemModel && $totalQty > $itemModel->quantity) {
+                $validator->errors()->add('selected_items', "Total jumlah yang diminta untuk {$itemModel->nama} ({$totalQty} unit) melebihi kapasitas/stok yang tersedia ({$itemModel->quantity} unit).");
+            }
+        }
+    }
+
+    /**
+     * Gabungkan item IDs yang sama dan akumulasi jumlahnya.
+     */
+    protected function aggregateItemsPayload(array $rawItems): array
+    {
+        $aggregated = [];
+        foreach ($rawItems as $item) {
+            $itemId = (int) ($item['item']['id'] ?? $item['item_id'] ?? 0);
+            $jumlah = max(1, (int) ($item['jumlah'] ?? 1));
+
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            if (!isset($aggregated[$itemId])) {
+                $aggregated[$itemId] = [
                     'item_id' => $itemId,
                     'jumlah' => 0,
                 ];
             }
-            $aggregatedPayload[$itemId]['jumlah'] += $jumlah;
-        }
-        $itemsPayload = array_values($aggregatedPayload);
-
-        // Simpan file berkas surat jika ada yang diunggah secara nyata (ke disk private 'local')
-        $suratFilename = null;
-        $suratUrl = null;
-        $uploadedFilePath = null;
-
-        if ($request->hasFile('surat_file')) {
-            $file = $request->file('surat_file');
-            $originalName = $file->getClientOriginalName();
-            $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $originalName);
-            $storedPath = $file->storeAs('surat', $safeName, 'local');
-            $uploadedFilePath = $storedPath;
-            $suratFilename = $originalName;
-            $suratUrl = $storedPath;
+            $aggregated[$itemId]['jumlah'] += $jumlah;
         }
 
-        try {
-            return DB::transaction(function () use ($validated, $itemsPayload, $request, $suratFilename, $suratUrl, $uploadedFilePath) {
-                // 1. Ambil seluruh item_id yang dipinjam, pastikan unik dan terurut ascending untuk mencegah deadlock
-                $itemIds = array_values(array_unique(array_column($itemsPayload, 'item_id')));
-                sort($itemIds);
-
-                // 2. Kunci baris master item_jenis secara konsisten untuk koordinasi dengan persetujuan admin
-                if (!empty($itemIds)) {
-                    ItemJenis::whereIn('id', $itemIds)
-                        ->orderBy('id', 'asc')
-                        ->lockForUpdate()
-                        ->get();
-                }
-
-                // 3. Serialisasi sequence ID bulanan secara aman pada database
-                if (\Illuminate\Support\Facades\Schema::hasTable('master_jenis')) {
-                    DB::table('master_jenis')->where('id', 1)->lockForUpdate()->first();
-                }
-
-                // 4. Pengecekan konflik jadwal di dalam transaksi terisolasi
-                $conflicts = $this->detectConflicts($validated['mulai'], $validated['selesai'], $itemsPayload);
-                if (!empty($conflicts)) {
-                    // Clean up file if conflict occurs to prevent orphan files
-                    if ($uploadedFilePath && Storage::disk('local')->exists($uploadedFilePath)) {
-                        Storage::disk('local')->delete($uploadedFilePath);
-                    }
-                    $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Jadwal bentrok: {$conflictItemNames} sudah dipinjam pada rentang waktu yang sama.",
-                        'conflicts' => $conflicts,
-                    ], 422);
-                }
-
-                $now = Carbon::now();
-                $prefix = 'PMJ-' . $now->format('Ym') . '-';
-
-                $records = Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
-                    ->orWhere('id', 'like', $prefix . '%')
-                    ->lockForUpdate()
-                    ->get(['id_peminjaman', 'id']);
-
-                $lastSeq = 0;
-                foreach ($records as $r) {
-                    $seqId = $r->id_peminjaman ?: $r->id;
-                    if ($seqId && str_starts_with($seqId, $prefix)) {
-                        $num = (int) substr($seqId, strlen($prefix));
-                        if ($num > $lastSeq) {
-                            $lastSeq = $num;
-                        }
-                    }
-                }
-
-                do {
-                    $lastSeq++;
-                    $newId = $prefix . str_pad((string)$lastSeq, 3, '0', STR_PAD_LEFT);
-                } while (Peminjaman::where('id_peminjaman', $newId)->orWhere('id', $newId)->exists());
-
-                $peminjaman = Peminjaman::create([
-                    'id_peminjaman' => $newId,
-                    'id' => $newId,
-                    'tgl_pengajuan' => $now->toDateString(),
-                    'nip' => $validated['nip'] ?? '-',
-                    'nama_peminjam' => $validated['nama_peminjam'],
-                    'nama_pemohon' => $validated['nama_peminjam'],
-                    'unit_kerja' => $validated['unit_kerja'],
-                    'unit_pemohon' => $validated['unit_kerja'],
-                    'pihak_pemohon' => $request->input('pihak_pemohon', 'Internal Kemenag Sleman'),
-                    'nomor_hp' => $request->input('nomor_hp', '-'),
-                    'penanggung_jawab' => $request->input('penanggung_jawab', $validated['nama_peminjam']),
-                    'jumlah_peserta' => (int) $request->input('jumlah_peserta', 1),
-                    'mulai' => $validated['mulai'],
-                    'selesai' => $validated['selesai'],
-                    'tgl_mulai' => substr($validated['mulai'], 0, 10),
-                    'tgl_selesai' => substr($validated['selesai'], 0, 10),
-                    'waktu_mulai' => strlen($validated['mulai']) >= 16 ? substr($validated['mulai'], 11, 5) : '08:00',
-                    'waktu_selesai' => strlen($validated['selesai']) >= 16 ? substr($validated['selesai'], 11, 5) : '16:00',
-                    'keperluan' => $validated['keperluan'],
-                    'surat_peminjaman' => $suratFilename,
-                    'surat_url' => $suratUrl,
-                    'status' => 'Menunggu Persetujuan',
-                    'petugas' => null,
-                ]);
-
-                foreach ($itemsPayload as $item) {
-                    if (\Illuminate\Support\Facades\Schema::hasTable('item_peminjaman')) {
-                        ItemPeminjaman::create([
-                            'id_peminjaman' => $newId,
-                            'item_id' => $item['item_id'],
-                            'jumlah' => $item['jumlah'],
-                        ]);
-                    }
-
-                    if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
-                        \App\Models\PeminjamanItem::create([
-                            'peminjaman_id' => $newId,
-                            'item_id' => $item['item_id'],
-                            'jumlah' => $item['jumlah'],
-                        ]);
-                    }
-                }
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Pengajuan peminjaman berhasil dikirim',
-                    'data' => $peminjaman->load(['items.item', 'itemPeminjaman.item']),
-                ], 201);
-            });
-        } catch (\Throwable $e) {
-            // Clean up orphan file if database transaction fails
-            if ($uploadedFilePath && Storage::disk('local')->exists($uploadedFilePath)) {
-                Storage::disk('local')->delete($uploadedFilePath);
-            }
-            throw $e;
-        }
+        return array_values($aggregated);
     }
 
-    private function detectConflicts(string $mulai, string $selesai, array $items): array
+    /**
+     * Hapus file upload lokal jika transaksi gagal untuk mencegah orphan files.
+     */
+    protected function cleanupUploadedFile(?string $path): void
     {
-        $conflicts = [];
-        $mulaiCarbon = Carbon::parse($mulai);
-        $selesaiCarbon = Carbon::parse($selesai);
-
-        // Find existing approved bookings overlapping this interval
-        $overlappingBookings = Peminjaman::where('status', 'Disetujui')
-            ->where(function ($query) use ($mulaiCarbon, $selesaiCarbon) {
-                $query->where('mulai', '<', $selesaiCarbon)
-                      ->where('selesai', '>', $mulaiCarbon);
-            })
-            ->with(['items.item', 'itemPeminjaman.item'])
-            ->get();
-
-        foreach ($items as $reqItem) {
-            $itemId = $reqItem['item_id'];
-            $reqQty = (int) $reqItem['jumlah'];
-            $itemModel = ItemJenis::find($itemId);
-            if (!$itemModel) continue;
-
-            $bookedQty = 0;
-            $conflictDetails = [];
-
-            foreach ($overlappingBookings as $booking) {
-                $bItems = $booking->items->isNotEmpty() ? $booking->items : $booking->itemPeminjaman;
-                foreach ($bItems as $bookedItem) {
-                    if ($bookedItem->item_id === $itemId) {
-                        $bookedQty += $bookedItem->jumlah;
-                        $conflictDetails[] = [
-                            'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
-                            'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
-                            'mulai' => $booking->mulai instanceof Carbon ? $booking->mulai->toDateTimeString() : (string) $booking->mulai,
-                            'selesai' => $booking->selesai instanceof Carbon ? $booking->selesai->toDateTimeString() : (string) $booking->selesai,
-                            'keperluan' => $booking->keperluan,
-                        ];
-                    }
-                }
-            }
-
-            if (($bookedQty + $reqQty) > $itemModel->quantity) {
-                $conflicts[] = [
-                    'item_id' => $itemId,
-                    'item_nama' => $itemModel->nama,
-                    'kapasitas_total' => $itemModel->quantity,
-                    'sudah_dipinjam' => $bookedQty,
-                    'diminta' => $reqQty,
-                    'overlapping_bookings' => $conflictDetails,
-                ];
-            }
+        if ($path && Storage::disk('local')->exists($path)) {
+            Storage::disk('local')->delete($path);
         }
-
-        return $conflicts;
     }
 }
