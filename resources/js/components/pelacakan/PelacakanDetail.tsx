@@ -11,6 +11,7 @@ interface PelacakanDetailProps {
 
 export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
   const items = data.items ?? [];
+  const isExternal = data.applicant_type === 'external' || (data.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-6">
@@ -28,15 +29,28 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
         <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-2">
-          <div className="flex items-center gap-2 font-bold text-slate-800">
-            <User className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Data Peminjam</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-bold text-slate-800">
+              <User className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Data Peminjam</span>
+            </div>
+            {isExternal ? (
+              <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                Eksternal
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                Internal Kemenag Sleman
+              </span>
+            )}
           </div>
           <p className="text-slate-900 font-semibold">{data.nama_peminjam}</p>
-          <p className="text-slate-500">NIP: {data.nip}</p>
+          <p className="text-slate-500">
+            NIP: {data.nip ? data.nip : (isExternal ? '- (Tidak Diperlukan - Eksternal)' : '-')}
+          </p>
           <div className="flex items-center gap-1.5 text-slate-600 pt-1">
             <Building className="w-3.5 h-3.5 text-slate-400" />
-            <span>{data.unit_kerja}</span>
+            <span>Asal Instansi / Unit Kerja: <strong>{data.unit_kerja}</strong></span>
           </div>
         </div>
 

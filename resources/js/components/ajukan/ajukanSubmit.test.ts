@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { normalizeDate, submitPeminjaman } from './ajukanSubmit';
 import axios from '../../services/api';
+import { FormPeminjamanState } from '../../types';
 
 vi.mock('../../services/api', () => ({
   default: {
@@ -19,12 +20,14 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
     expect(normalizeDate('2026-10-15 08:00:00')).toBe('2026-10-15 08:00:00');
   });
 
-  it('submits JSON payload when no file is uploaded', async () => {
+  it('submits JSON payload when no file is uploaded for internal applicant', async () => {
     vi.mocked(axios.post).mockResolvedValueOnce({
       data: { success: true, data: { id_peminjaman: 'PMJ-202610-099' } },
     });
 
-    const form = {
+    const form: FormPeminjamanState = {
+      applicant_type: 'internal',
+      pihak_pemohon: 'Internal Kemenag Sleman',
       nip: '198501012010011001',
       nama_peminjam: 'Ahmad Subarkah',
       unit_kerja: 'Bimas Islam',
@@ -41,6 +44,8 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
     expect(axios.post).toHaveBeenCalledWith(
       '/api/peminjaman',
       expect.objectContaining({
+        applicant_type: 'internal',
+        pihak_pemohon: 'Internal Kemenag Sleman',
         nip: '198501012010011001',
         mulai: '2026-10-15 08:00:00',
         selesai: '2026-10-15 16:00:00',
@@ -48,19 +53,21 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
     );
   });
 
-  it('submits FormData multipart when file is attached', async () => {
+  it('submits FormData multipart with applicant_type and file when file is attached', async () => {
     vi.mocked(axios.post).mockResolvedValueOnce({
       data: { success: true, data: { id_peminjaman: 'PMJ-202610-100' } },
     });
 
-    const form = {
-      nip: '198501012010011001',
-      nama_peminjam: 'Ahmad Subarkah',
-      unit_kerja: 'Bimas Islam',
+    const form: FormPeminjamanState = {
+      applicant_type: 'external',
+      pihak_pemohon: 'Eksternal (Madrasah/KUA/Lainnya)',
+      nip: '',
+      nama_peminjam: 'Siti Nurjanah',
+      unit_kerja: 'MTs Negeri 1',
       nomor_hp: '08123456789',
       mulai: '2026-10-15T08:00',
       selesai: '2026-10-15T16:00',
-      keperluan: 'Bimbingan Teknis',
+      keperluan: 'Lomba Sains',
       surat_peminjaman_name: 'surat.pdf',
       selected_items: [],
     };
@@ -79,7 +86,9 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
   });
 
   it('rejects file larger than 1 MB before making API request', async () => {
-    const form = {
+    const form: FormPeminjamanState = {
+      applicant_type: 'internal',
+      pihak_pemohon: 'Internal Kemenag Sleman',
       nip: '198501012010011001',
       nama_peminjam: 'Ahmad Subarkah',
       unit_kerja: 'Bimas Islam',
@@ -102,7 +111,9 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
   });
 
   it('rejects non-PDF files before making API request', async () => {
-    const form = {
+    const form: FormPeminjamanState = {
+      applicant_type: 'internal',
+      pihak_pemohon: 'Internal Kemenag Sleman',
       nip: '198501012010011001',
       nama_peminjam: 'Ahmad Subarkah',
       unit_kerja: 'Bimas Islam',

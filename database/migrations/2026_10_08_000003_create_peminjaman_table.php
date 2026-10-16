@@ -11,11 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('peminjaman')) {
+        if (! Schema::hasTable('peminjaman')) {
             Schema::create('peminjaman', function (Blueprint $table) {
                 $table->string('id_peminjaman', 50)->primary();
                 $table->date('tgl_pengajuan');
-                $table->string('nip', 30);
+                $table->string('nip', 30)->nullable();
                 $table->string('nama_peminjam', 150);
                 $table->string('unit_kerja', 150);
                 $table->dateTime('mulai');

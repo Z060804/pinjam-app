@@ -11,6 +11,7 @@ import { RingkasanSidebar } from './RingkasanSidebar';
 import { SuccessModal } from './SuccessModal';
 import { StepNavigation } from './StepNavigation';
 import { submitPeminjaman } from './ajukanSubmit';
+import { isDateTimeRangeValid } from '../../utils/date';
 import { AlertTriangle } from 'lucide-react';
 
 interface AjukanPeminjamanViewProps {
@@ -40,6 +41,8 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   const [fileError, setFileError] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormPeminjamanState>({
+    applicant_type: 'internal',
+    pihak_pemohon: 'Internal Kemenag Sleman',
     nip: '',
     nama_peminjam: '',
     unit_kerja: '',
@@ -87,13 +90,67 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     }
   }, [initialSelected, searchParams, items]);
 
+  const roomCount = form.selected_items
+    .filter((c) => c.item.id_jenis === 1)
+    .reduce((sum, c) => sum + c.jumlah, 0);
+
+  const vehicleCount = form.selected_items
+    .filter((c) => c.item.id_jenis === 2)
+    .reduce((sum, c) => sum + c.jumlah, 0);
+
+  const equipmentCount = form.selected_items
+    .filter((c) => c.item.id_jenis === 3)
+    .reduce((sum, c) => sum + c.jumlah, 0);
+
+  const isSuratWajib =
+    form.applicant_type === 'external' || vehicleCount > 0 || equipmentCount > 0;
+
+  const handleApplicantTypeChange = (newType: 'internal' | 'external') => {
+    setErrorMessage(null);
+    setForm((prev) => ({
+      ...prev,
+      applicant_type: newType,
+      pihak_pemohon:
+        newType === 'external'
+          ? 'Eksternal (Madrasah/KUA/Lainnya)'
+          : 'Internal Kemenag Sleman',
+      nip: newType === 'external' ? '' : prev.nip, // Bersihkan NIP jika beralih ke eksternal
+    }));
+  };
+
   const handleToggleItem = (item: ItemJenis, jumlah: number) => {
     setErrorMessage(null);
     setForm((prev) => {
       const exists = prev.selected_items.find((c) => c.item.id === item.id);
       if (exists) {
-        return { ...prev, selected_items: prev.selected_items.filter((c) => c.item.id !== item.id) };
+        return {
+          ...prev,
+          selected_items: prev.selected_items.filter((c) => c.item.id !== item.id),
+        };
       }
+
+      // Validasi batasan kuota untuk pemohon eksternal
+      if (prev.applicant_type === 'external') {
+        if (item.id_jenis === 1) {
+          const currentRooms = prev.selected_items
+            .filter((c) => c.item.id_jenis === 1)
+            .reduce((s, c) => s + c.jumlah, 0);
+          if (currentRooms >= 1) {
+            setErrorMessage('Pemohon eksternal hanya diperbolehkan memilih maksimal 1 ruangan.');
+            return prev;
+          }
+        }
+        if (item.id_jenis === 2) {
+          const currentVehicles = prev.selected_items
+            .filter((c) => c.item.id_jenis === 2)
+            .reduce((s, c) => s + c.jumlah, 0);
+          if (currentVehicles >= 1) {
+            setErrorMessage('Pemohon eksternal hanya diperbolehkan memilih maksimal 1 kendaraan.');
+            return prev;
+          }
+        }
+      }
+
       return { ...prev, selected_items: [...prev.selected_items, { item, jumlah }] };
     });
   };
@@ -102,9 +159,17 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     setErrorMessage(null);
     setForm((prev) => ({
       ...prev,
-      selected_items: prev.selected_items.map((c) =>
-        c.item.id === itemId ? { ...c, jumlah: Math.max(1, c.jumlah + delta) } : c
-      ),
+      selected_items: prev.selected_items.map((c) => {
+        if (c.item.id !== itemId) return c;
+        if (
+          prev.applicant_type === 'external' &&
+          (c.item.id_jenis === 1 || c.item.id_jenis === 2) &&
+          delta > 0
+        ) {
+          return c; // Batasi maksimal 1 unit untuk ruangan/kendaraan eksternal
+        }
+        return { ...c, jumlah: Math.max(1, c.jumlah + delta) };
+      }),
     }));
   };
 
@@ -117,23 +182,63 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   };
 
   const canProceed = (): boolean => {
-    if (step === 1) return form.selected_items.length > 0;
-    if (step === 2) return Boolean(form.nip.trim() && form.nama_peminjam.trim() && form.unit_kerja.trim());
+    if (step === 1) {
+      if (form.selected_items.length === 0) return false;
+      if (form.applicant_type === 'external' && (roomCount > 1 || vehicleCount > 1)) {
+        return false;
+      }
+      return true;
+    }
+    if (step === 2) {
+      const hasBase = Boolean(
+        form.nama_peminjam.trim() &&
+        form.unit_kerja.trim() &&
+        (form.nomor_hp || '').trim()
+      );
+      if (!hasBase) return false;
+      if (form.applicant_type === 'internal') {
+        if (!form.nip.trim()) return false;
+      }
+      if (form.applicant_type === 'external') {
+        if (roomCount > 1 || vehicleCount > 1) return false;
+      }
+      return true;
+    }
     if (step === 3) {
-      return Boolean(form.mulai && form.selesai && form.keperluan.trim() && new Date(form.selesai) > new Date(form.mulai));
+      return Boolean(
+        form.mulai &&
+        form.selesai &&
+        form.keperluan.trim() &&
+        isDateTimeRangeValid(form.mulai, form.selesai)
+      );
     }
     if (step === 4) {
       if (fileError) return false;
+      if (isSuratWajib && !uploadedFile && !form.surat_peminjaman_name) {
+        return false;
+      }
       return true;
     }
     return true;
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     if (fileError) {
       setErrorMessage(fileError);
       return;
     }
+
+    if (isSuratWajib && !uploadedFile && !form.surat_peminjaman_name) {
+      setErrorMessage(
+        form.applicant_type === 'external'
+          ? 'Pemohon eksternal wajib mengunggah surat permohonan peminjaman resmi bertanda tangan pimpinan (format PDF, maks. 1 MB).'
+          : 'Peminjaman kendaraan atau barang/peralatan wajib melampirkan berkas surat permohonan resmi (format PDF, maks. 1 MB).'
+      );
+      return;
+    }
+
     if (uploadedFile) {
       if (!uploadedFile.name.toLowerCase().endsWith('.pdf')) {
         setErrorMessage('Format berkas surat permohonan harus berupa PDF (.pdf).');
@@ -164,7 +269,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Ajukan Peminjaman</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Satu permohonan untuk seluruh item yang Anda butuhkan.
+          Satu permohonan untuk seluruh sarana prasarana yang Anda butuhkan.
         </p>
       </div>
 
@@ -178,16 +283,24 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 items={items}
                 categories={categories}
                 selectedItems={form.selected_items}
+                applicantType={form.applicant_type}
                 onToggleItem={handleToggleItem}
               />
             )}
             {step === 2 && (
               <StepDataPeminjam
+                applicantType={form.applicant_type}
                 nip={form.nip}
                 namaPeminjam={form.nama_peminjam}
                 unitKerja={form.unit_kerja}
                 nomorHp={form.nomor_hp}
-                onChangeField={(f, v) => { setErrorMessage(null); setForm((prev) => ({ ...prev, [f]: v })); }}
+                roomCount={roomCount}
+                vehicleCount={vehicleCount}
+                onChangeApplicantType={handleApplicantTypeChange}
+                onChangeField={(f, v) => {
+                  setErrorMessage(null);
+                  setForm((prev) => ({ ...prev, [f]: v }));
+                }}
               />
             )}
             {step === 3 && (
@@ -195,7 +308,10 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 mulai={form.mulai}
                 selesai={form.selesai}
                 keperluan={form.keperluan}
-                onChangeField={(f, v) => { setErrorMessage(null); setForm((prev) => ({ ...prev, [f]: v })); }}
+                onChangeField={(f, v) => {
+                  setErrorMessage(null);
+                  setForm((prev) => ({ ...prev, [f]: v }));
+                }}
               />
             )}
             {step === 4 && (
@@ -204,6 +320,8 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                   suratName={uploadedFile ? uploadedFile.name : form.surat_peminjaman_name}
                   file={uploadedFile}
                   fileError={fileError}
+                  applicantType={form.applicant_type}
+                  isSuratWajib={isSuratWajib}
                   onFileSelect={(f) => {
                     setUploadedFile(f);
                     setForm((prev) => ({ ...prev, surat_peminjaman_name: f ? f.name : '' }));
@@ -229,8 +347,14 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
             step={step}
             canProceed={canProceed()}
             isSubmitting={isSubmitting}
-            onPrev={() => { setErrorMessage(null); setStep((s) => Math.max(1, s - 1)); }}
-            onNext={() => { setErrorMessage(null); setStep((s) => s + 1); }}
+            onPrev={() => {
+              setErrorMessage(null);
+              setStep((s) => Math.max(1, s - 1));
+            }}
+            onNext={() => {
+              setErrorMessage(null);
+              setStep((s) => s + 1);
+            }}
             onSubmit={handleSubmit}
           />
         </div>
@@ -238,6 +362,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
         <div className="lg:col-span-1">
           <RingkasanSidebar
             selectedItems={form.selected_items}
+            applicantType={form.applicant_type}
             onRemoveItem={handleRemoveItem}
             onUpdateQty={handleUpdateQty}
           />

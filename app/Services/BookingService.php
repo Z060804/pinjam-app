@@ -65,7 +65,7 @@ class BookingService
         if ($excludePeminjamanId) {
             $query->where(function ($q) use ($excludePeminjamanId) {
                 $q->where('id_peminjaman', '!=', $excludePeminjamanId)
-                  ->where('id', '!=', $excludePeminjamanId);
+                    ->where('id', '!=', $excludePeminjamanId);
             });
         }
 
@@ -87,7 +87,7 @@ class BookingService
             $reqQty = max(1, (int) ($reqItem['jumlah'] ?? 1));
 
             $itemModel = ItemJenis::find($itemId);
-            if (!$itemModel) {
+            if (! $itemModel) {
                 continue;
             }
 
@@ -141,8 +141,9 @@ class BookingService
             $this->lockSequenceAnchor();
 
             $conflicts = $this->detectConflicts($validated['mulai'], $validated['selesai'], $itemsPayload);
-            if (!empty($conflicts)) {
+            if (! empty($conflicts)) {
                 $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+
                 return [
                     'success' => false,
                     'message' => "Jadwal bentrok: {$conflictItemNames} sudah dipinjam pada rentang waktu yang sama.",
@@ -153,16 +154,22 @@ class BookingService
             $now = Carbon::now();
             $newId = $this->generateNextId($now);
 
+            $applicantType = $additionalData['applicant_type'] ?? $validated['applicant_type'] ?? null;
+            $pihakPemohonInput = $additionalData['pihak_pemohon'] ?? $validated['pihak_pemohon'] ?? null;
+            $isExternal = ($applicantType === 'external') || ($pihakPemohonInput && (str_contains(strtolower($pihakPemohonInput), 'eksternal') || str_contains(strtolower($pihakPemohonInput), 'external')));
+            $pihakPemohon = $isExternal ? ($pihakPemohonInput ?: 'Eksternal (Madrasah/KUA/Lainnya)') : ($pihakPemohonInput ?: 'Internal Kemenag Sleman');
+            $nipToStore = $isExternal ? null : (! empty($validated['nip']) ? $validated['nip'] : null);
+
             $peminjaman = Peminjaman::create([
                 'id_peminjaman' => $newId,
                 'id' => $newId,
                 'tgl_pengajuan' => $now->toDateString(),
-                'nip' => $validated['nip'] ?? '-',
+                'nip' => $nipToStore,
                 'nama_peminjam' => $validated['nama_peminjam'],
                 'nama_pemohon' => $validated['nama_peminjam'],
                 'unit_kerja' => $validated['unit_kerja'],
                 'unit_pemohon' => $validated['unit_kerja'],
-                'pihak_pemohon' => $additionalData['pihak_pemohon'] ?? 'Internal Kemenag Sleman',
+                'pihak_pemohon' => $pihakPemohon,
                 'nomor_hp' => $additionalData['nomor_hp'] ?? '-',
                 'penanggung_jawab' => $additionalData['penanggung_jawab'] ?? $validated['nama_peminjam'],
                 'jumlah_peserta' => (int) ($additionalData['jumlah_peserta'] ?? 1),
@@ -214,8 +221,8 @@ class BookingService
 
         $this->lockItemsForUpdate($itemIds);
 
-        $mulaiStr = $peminjaman->mulai ?: ($peminjaman->tgl_mulai . ' ' . ($peminjaman->waktu_mulai ?: '08:00'));
-        $selesaiStr = $peminjaman->selesai ?: ($peminjaman->tgl_selesai . ' ' . ($peminjaman->waktu_selesai ?: '16:00'));
+        $mulaiStr = $peminjaman->mulai ?: ($peminjaman->tgl_mulai.' '.($peminjaman->waktu_mulai ?: '08:00'));
+        $selesaiStr = $peminjaman->selesai ?: ($peminjaman->tgl_selesai.' '.($peminjaman->waktu_selesai ?: '16:00'));
 
         $itemsPayload = $itemList->map(fn ($it) => [
             'item_id' => (int) $it->item_id,
@@ -229,8 +236,9 @@ class BookingService
             $peminjaman->id_peminjaman ?? $peminjaman->id
         );
 
-        if (!empty($conflicts)) {
+        if (! empty($conflicts)) {
             $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+
             return [
                 'success' => false,
                 'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
@@ -253,7 +261,8 @@ class BookingService
      */
     public function consolidateItems(Peminjaman $peminjaman): Collection
     {
-        $allItems = $peminjaman->items->concat($peminjaman->itemPeminjaman)->filter(fn ($it) => !empty($it->item_id));
+        $allItems = $peminjaman->items->concat($peminjaman->itemPeminjaman)->filter(fn ($it) => ! empty($it->item_id));
+
         return $allItems->unique(fn ($it) => (int) $it->item_id)->values();
     }
 
@@ -284,10 +293,10 @@ class BookingService
      */
     protected function generateNextId(Carbon $now): string
     {
-        $prefix = 'PMJ-' . $now->format('Ym') . '-';
+        $prefix = 'PMJ-'.$now->format('Ym').'-';
 
-        $records = Peminjaman::where('id_peminjaman', 'like', $prefix . '%')
-            ->orWhere('id', 'like', $prefix . '%')
+        $records = Peminjaman::where('id_peminjaman', 'like', $prefix.'%')
+            ->orWhere('id', 'like', $prefix.'%')
             ->lockForUpdate()
             ->get(['id_peminjaman', 'id']);
 
@@ -304,7 +313,7 @@ class BookingService
 
         do {
             $lastSeq++;
-            $newId = $prefix . str_pad((string) $lastSeq, 3, '0', STR_PAD_LEFT);
+            $newId = $prefix.str_pad((string) $lastSeq, 3, '0', STR_PAD_LEFT);
         } while (Peminjaman::where('id_peminjaman', $newId)->orWhere('id', $newId)->exists());
 
         return $newId;

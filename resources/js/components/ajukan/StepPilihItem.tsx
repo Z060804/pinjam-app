@@ -6,6 +6,7 @@ interface StepPilihItemProps {
   items: ItemJenis[];
   categories: MasterJenis[];
   selectedItems: CartItem[];
+  applicantType?: 'internal' | 'external';
   onToggleItem: (item: ItemJenis, jumlah: number) => void;
 }
 
@@ -13,6 +14,7 @@ export const StepPilihItem: React.FC<StepPilihItemProps> = ({
   items,
   categories,
   selectedItems,
+  applicantType = 'internal',
   onToggleItem,
 }) => {
   const [activeCategory, setActiveCategory] = useState<number | null>(null);
@@ -36,7 +38,7 @@ export const StepPilihItem: React.FC<StepPilihItemProps> = ({
       <div>
         <h3 className="text-base font-bold text-slate-900">1. Pilih Sumber Daya yang Dibutuhkan</h3>
         <p className="text-xs text-slate-500">
-          Anda dapat memilih lebih dari satu item (misal ruangan rapat beserta proyektor/laptop).
+          Anda dapat memilih sarana prasarana yang diperlukan. {applicantType === 'external' ? 'Pemohon eksternal dibatasi maksimal 1 ruangan dan 1 kendaraan.' : 'Pemohon internal dapat mengajukan beberapa item.'}
         </p>
       </div>
 

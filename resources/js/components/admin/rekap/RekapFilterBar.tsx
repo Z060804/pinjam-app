@@ -6,9 +6,11 @@ interface RekapFilterBarProps {
   dateFrom: string;
   dateTo: string;
   jenisFilter: 'Semua' | Permohonan['jenis'];
+  applicantFilter: 'Semua' | 'internal' | 'external';
   onDateFromChange: (val: string) => void;
   onDateToChange: (val: string) => void;
   onJenisFilterChange: (val: 'Semua' | Permohonan['jenis']) => void;
+  onApplicantFilterChange: (val: 'Semua' | 'internal' | 'external') => void;
   onReset: () => void;
 }
 
@@ -16,9 +18,11 @@ export const RekapFilterBar: React.FC<RekapFilterBarProps> = ({
   dateFrom,
   dateTo,
   jenisFilter,
+  applicantFilter,
   onDateFromChange,
   onDateToChange,
   onJenisFilterChange,
+  onApplicantFilterChange,
   onReset,
 }) => {
   return (
@@ -72,6 +76,25 @@ export const RekapFilterBar: React.FC<RekapFilterBarProps> = ({
               <option value="kendaraan">Kendaraan</option>
               <option value="perlengkapan">Perlengkapan</option>
               <option value="kombinasi">Multi-Item (Kombinasi)</option>
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-[140px]">
+          <label htmlFor="rekap-applicant-filter" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+            Jenis Pemohon
+          </label>
+          <div className="relative">
+            <select
+              id="rekap-applicant-filter"
+              value={applicantFilter}
+              onChange={(e) => onApplicantFilterChange(e.target.value as 'Semua' | 'internal' | 'external')}
+              className="w-full appearance-none px-3 pr-8 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#009966]/30 focus:border-[#009966] transition"
+            >
+              <option value="Semua">Semua Pemohon</option>
+              <option value="internal">Internal Kemenag Sleman</option>
+              <option value="external">Eksternal</option>
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
           </div>

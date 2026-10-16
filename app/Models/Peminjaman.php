@@ -11,8 +11,11 @@ class Peminjaman extends Model
     use HasFactory;
 
     protected $table = 'peminjaman';
+
     protected $primaryKey = 'id_peminjaman';
+
     public $incrementing = false;
+
     protected $keyType = 'string';
 
     protected $fillable = [
@@ -70,29 +73,29 @@ class Peminjaman extends Model
                 $model->attributes['unit_kerja'] = $unit;
             }
 
-            if (empty($model->attributes['surat_peminjaman']) && !empty($model->attributes['surat_url'])) {
+            if (empty($model->attributes['surat_peminjaman']) && ! empty($model->attributes['surat_url'])) {
                 $model->attributes['surat_peminjaman'] = $model->attributes['surat_url'];
             }
-            if (empty($model->attributes['surat_url']) && !empty($model->attributes['surat_peminjaman'])) {
+            if (empty($model->attributes['surat_url']) && ! empty($model->attributes['surat_peminjaman'])) {
                 $model->attributes['surat_url'] = $model->attributes['surat_peminjaman'];
             }
 
-            if (empty($model->attributes['mulai']) && !empty($model->attributes['tgl_mulai'])) {
+            if (empty($model->attributes['mulai']) && ! empty($model->attributes['tgl_mulai'])) {
                 $wkt = $model->attributes['waktu_mulai'] ?? '08:00';
-                $model->attributes['mulai'] = $model->attributes['tgl_mulai'] . ' ' . (strlen($wkt) === 5 ? $wkt . ':00' : $wkt);
+                $model->attributes['mulai'] = $model->attributes['tgl_mulai'].' '.(strlen($wkt) === 5 ? $wkt.':00' : $wkt);
             }
 
-            if (empty($model->attributes['selesai']) && !empty($model->attributes['tgl_selesai'])) {
+            if (empty($model->attributes['selesai']) && ! empty($model->attributes['tgl_selesai'])) {
                 $wkt = $model->attributes['waktu_selesai'] ?? '16:00';
-                $model->attributes['selesai'] = $model->attributes['tgl_selesai'] . ' ' . (strlen($wkt) === 5 ? $wkt . ':00' : $wkt);
+                $model->attributes['selesai'] = $model->attributes['tgl_selesai'].' '.(strlen($wkt) === 5 ? $wkt.':00' : $wkt);
             }
 
-            if (empty($model->attributes['tgl_mulai']) && !empty($model->attributes['mulai'])) {
+            if (empty($model->attributes['tgl_mulai']) && ! empty($model->attributes['mulai'])) {
                 $model->attributes['tgl_mulai'] = substr($model->attributes['mulai'], 0, 10);
                 $model->attributes['waktu_mulai'] = substr($model->attributes['mulai'], 11, 5) ?: '08:00';
             }
 
-            if (empty($model->attributes['tgl_selesai']) && !empty($model->attributes['selesai'])) {
+            if (empty($model->attributes['tgl_selesai']) && ! empty($model->attributes['selesai'])) {
                 $model->attributes['tgl_selesai'] = substr($model->attributes['selesai'], 0, 10);
                 $model->attributes['waktu_selesai'] = substr($model->attributes['selesai'], 11, 5) ?: '16:00';
             }
@@ -100,6 +103,13 @@ class Peminjaman extends Model
     }
 
     // Accessors & Mutators for compatibility between schema variants
+    public function getApplicantTypeAttribute(): string
+    {
+        $val = strtolower($this->attributes['pihak_pemohon'] ?? '');
+
+        return (str_contains($val, 'eksternal') || str_contains($val, 'external')) ? 'external' : 'internal';
+    }
+
     public function getIdAttribute()
     {
         return $this->attributes['id_peminjaman'] ?? $this->attributes['id'] ?? null;
@@ -174,7 +184,7 @@ class Peminjaman extends Model
     public function setSuratPeminjamanAttribute($value)
     {
         $this->attributes['surat_peminjaman'] = $value;
-        if (!isset($this->attributes['surat_url'])) {
+        if (! isset($this->attributes['surat_url'])) {
             $this->attributes['surat_url'] = $value;
         }
     }
@@ -187,7 +197,7 @@ class Peminjaman extends Model
     public function setSuratUrlAttribute($value)
     {
         $this->attributes['surat_url'] = $value;
-        if (!isset($this->attributes['surat_peminjaman'])) {
+        if (! isset($this->attributes['surat_peminjaman'])) {
             $this->attributes['surat_peminjaman'] = $value;
         }
     }
@@ -199,6 +209,7 @@ class Peminjaman extends Model
         }
         $tgl = $this->attributes['tgl_mulai'] ?? '';
         $wkt = $this->attributes['waktu_mulai'] ?? '08:00';
+
         return trim("{$tgl} {$wkt}");
     }
 
@@ -209,50 +220,55 @@ class Peminjaman extends Model
         }
         $tgl = $this->attributes['tgl_selesai'] ?? '';
         $wkt = $this->attributes['waktu_selesai'] ?? '16:00';
+
         return trim("{$tgl} {$wkt}");
     }
 
     public function getTglMulaiAttribute()
     {
-        if (!empty($this->attributes['tgl_mulai'])) {
+        if (! empty($this->attributes['tgl_mulai'])) {
             return $this->attributes['tgl_mulai'];
         }
-        if (!empty($this->attributes['mulai'])) {
+        if (! empty($this->attributes['mulai'])) {
             return substr($this->attributes['mulai'], 0, 10);
         }
+
         return null;
     }
 
     public function getTglSelesaiAttribute()
     {
-        if (!empty($this->attributes['tgl_selesai'])) {
+        if (! empty($this->attributes['tgl_selesai'])) {
             return $this->attributes['tgl_selesai'];
         }
-        if (!empty($this->attributes['selesai'])) {
+        if (! empty($this->attributes['selesai'])) {
             return substr($this->attributes['selesai'], 0, 10);
         }
+
         return null;
     }
 
     public function getWaktuMulaiAttribute()
     {
-        if (!empty($this->attributes['waktu_mulai'])) {
+        if (! empty($this->attributes['waktu_mulai'])) {
             return $this->attributes['waktu_mulai'];
         }
-        if (!empty($this->attributes['mulai']) && strlen($this->attributes['mulai']) >= 16) {
+        if (! empty($this->attributes['mulai']) && strlen($this->attributes['mulai']) >= 16) {
             return substr($this->attributes['mulai'], 11, 5);
         }
+
         return '08:00';
     }
 
     public function getWaktuSelesaiAttribute()
     {
-        if (!empty($this->attributes['waktu_selesai'])) {
+        if (! empty($this->attributes['waktu_selesai'])) {
             return $this->attributes['waktu_selesai'];
         }
-        if (!empty($this->attributes['selesai']) && strlen($this->attributes['selesai']) >= 16) {
+        if (! empty($this->attributes['selesai']) && strlen($this->attributes['selesai']) >= 16) {
             return substr($this->attributes['selesai'], 11, 5);
         }
+
         return '16:00';
     }
 

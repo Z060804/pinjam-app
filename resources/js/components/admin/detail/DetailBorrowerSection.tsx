@@ -6,6 +6,8 @@ interface DetailBorrowerSectionProps {
 }
 
 export const DetailBorrowerSection: React.FC<DetailBorrowerSectionProps> = ({ permohonan }) => {
+  const isExternal = permohonan.applicant_type === 'external' || (permohonan.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
+
   return (
     <div>
       <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider mb-3">
@@ -13,11 +15,21 @@ export const DetailBorrowerSection: React.FC<DetailBorrowerSectionProps> = ({ pe
       </h3>
       <div className="grid grid-cols-2 gap-x-6 gap-y-3">
         <div>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase">Pihak Peminjam</p>
-          <p className="text-sm font-bold text-slate-800">{permohonan.pihak_pemohon}</p>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase">Jenis Pemohon</p>
+          <div className="mt-1">
+            {isExternal ? (
+              <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200">
+                Eksternal (Madrasah/KUA/Lainnya)
+              </span>
+            ) : (
+              <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Internal Kemenag Sleman
+              </span>
+            )}
+          </div>
         </div>
         <div>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase">Unit Kerja / Seksi</p>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase">Asal Instansi / Unit Kerja</p>
           <p className="text-sm font-semibold text-slate-700">{permohonan.unit_pemohon}</p>
         </div>
         <div>
@@ -26,7 +38,9 @@ export const DetailBorrowerSection: React.FC<DetailBorrowerSectionProps> = ({ pe
         </div>
         <div>
           <p className="text-[10px] font-semibold text-slate-400 uppercase">NIP Peminjam</p>
-          <p className="text-sm font-semibold text-slate-700">{permohonan.nip ?? '-'}</p>
+          <p className="text-sm font-semibold text-slate-700">
+            {permohonan.nip ? permohonan.nip : (isExternal ? '- (Tidak Diperlukan - Eksternal)' : '-')}
+          </p>
         </div>
         <div>
           <p className="text-[10px] font-semibold text-slate-400 uppercase">Nomor WhatsApp / HP</p>

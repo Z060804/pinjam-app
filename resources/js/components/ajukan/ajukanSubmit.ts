@@ -14,7 +14,11 @@ export const submitPeminjaman = async (
       throw new Error('Berkas surat permohonan harus berformat PDF (.pdf) dengan ukuran maksimal 1 MB (1.048.576 byte).');
     }
     const formData = new FormData();
-    formData.append('nip', form.nip);
+    formData.append('applicant_type', form.applicant_type);
+    formData.append('pihak_pemohon', form.pihak_pemohon);
+    if (form.applicant_type === 'internal') {
+      formData.append('nip', form.nip);
+    }
     formData.append('nama_peminjam', form.nama_peminjam);
     formData.append('unit_kerja', form.unit_kerja);
     if (form.nomor_hp) formData.append('nomor_hp', form.nomor_hp);
@@ -33,6 +37,7 @@ export const submitPeminjaman = async (
 
   const response = await axios.post('/api/peminjaman', {
     ...form,
+    nip: form.applicant_type === 'internal' ? form.nip : null,
     surat_peminjaman_name: form.surat_peminjaman_name || null,
     mulai: normalizeDate(form.mulai),
     selesai: normalizeDate(form.selesai),

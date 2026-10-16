@@ -42,6 +42,7 @@ export interface Permohonan {
   id: string;
   id_peminjaman?: string;
   tgl_pengajuan: string;
+  applicant_type?: 'internal' | 'external' | string;
   pihak_pemohon: string; // e.g. "Internal Kemenag Sleman"
   unit_pemohon: string;
   nama_pemohon: string;

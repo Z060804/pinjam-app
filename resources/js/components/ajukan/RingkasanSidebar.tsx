@@ -4,12 +4,14 @@ import { Trash2, ShoppingBag, AlertCircle } from 'lucide-react';
 
 interface RingkasanSidebarProps {
   selectedItems: CartItem[];
+  applicantType?: 'internal' | 'external';
   onRemoveItem: (itemId: number) => void;
   onUpdateQty: (itemId: number, delta: number) => void;
 }
 
 export const RingkasanSidebar: React.FC<RingkasanSidebarProps> = ({
   selectedItems,
+  applicantType = 'internal',
   onRemoveItem,
   onUpdateQty,
 }) => {
@@ -37,46 +39,56 @@ export const RingkasanSidebar: React.FC<RingkasanSidebarProps> = ({
           </div>
         ) : (
           <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
-            {selectedItems.map((cart) => (
-              <div
-                key={cart.item.id}
-                className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start justify-between gap-2"
-              >
-                <div className="space-y-0.5">
-                  <h5 className="text-xs font-bold text-slate-900">{cart.item.nama}</h5>
-                  {cart.item.registration_id && (
-                    <p className="text-[10px] font-mono text-slate-500">{cart.item.registration_id}</p>
-                  )}
-                  <div className="flex items-center gap-2 pt-1 text-xs text-slate-600">
-                    <span>Jumlah:</span>
-                    <button
-                      type="button"
-                      onClick={() => onUpdateQty(cart.item.id, -1)}
-                      className="w-5 h-5 rounded bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100"
-                    >
-                      -
-                    </button>
-                    <span className="font-bold text-slate-900">{cart.jumlah}</span>
-                    <button
-                      type="button"
-                      onClick={() => onUpdateQty(cart.item.id, 1)}
-                      className="w-5 h-5 rounded bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onRemoveItem(cart.item.id)}
-                  className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                  title="Hapus"
+            {selectedItems.map((cart) => {
+              const isRoomOrVehicle = cart.item.id_jenis === 1 || cart.item.id_jenis === 2;
+              const isMaxForExternal = applicantType === 'external' && isRoomOrVehicle && cart.jumlah >= 1;
+              return (
+                <div
+                  key={cart.item.id}
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start justify-between gap-2"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
+                  <div className="space-y-0.5">
+                    <h5 className="text-xs font-bold text-slate-900">{cart.item.nama}</h5>
+                    {cart.item.registration_id && (
+                      <p className="text-[10px] font-mono text-slate-500">{cart.item.registration_id}</p>
+                    )}
+                    <div className="flex items-center gap-2 pt-1 text-xs text-slate-600">
+                      <span>Jumlah:</span>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateQty(cart.item.id, -1)}
+                        className="w-5 h-5 rounded bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100"
+                      >
+                        -
+                      </button>
+                      <span className="font-bold text-slate-900">{cart.jumlah}</span>
+                      <button
+                        type="button"
+                        disabled={isMaxForExternal}
+                        onClick={() => !isMaxForExternal && onUpdateQty(cart.item.id, 1)}
+                        className={`w-5 h-5 rounded border flex items-center justify-center font-bold text-slate-700 ${
+                          isMaxForExternal
+                            ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
+                            : 'bg-white border-slate-200 hover:bg-slate-100 cursor-pointer'
+                        }`}
+                        title={isMaxForExternal ? 'Maksimal 1 unit untuk pemohon eksternal' : 'Tambah'}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onRemoveItem(cart.item.id)}
+                    className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                    title="Hapus"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

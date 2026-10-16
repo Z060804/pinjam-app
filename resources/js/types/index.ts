@@ -20,6 +20,8 @@ export interface MasterPeminjaman {
   id?: string;
   id_peminjaman: string;
   tgl_pengajuan: string;
+  applicant_type?: 'internal' | 'external' | string;
+  pihak_pemohon?: string;
   nip?: string;
   nama_peminjam: string;
   nama_pemohon?: string;
@@ -58,6 +60,8 @@ export interface CartItem {
 }
 
 export interface FormPeminjamanState {
+  applicant_type: 'internal' | 'external';
+  pihak_pemohon: string;
   nip: string;
   nama_peminjam: string;
   unit_kerja: string;

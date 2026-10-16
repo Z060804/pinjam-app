@@ -25,6 +25,7 @@ class SimpruController extends Controller
     public function getMasterJenis(): JsonResponse
     {
         $categories = MasterJenis::all();
+
         return response()->json([
             'success' => true,
             'data' => $categories,
@@ -42,6 +43,7 @@ class SimpruController extends Controller
         }
 
         $items = $query->orderBy('id')->get();
+
         return response()->json([
             'success' => true,
             'data' => $items,
@@ -90,7 +92,7 @@ class SimpruController extends Controller
     public function updateItem(Request $request, int $id): JsonResponse
     {
         $item = ItemJenis::find($id);
-        if (!$item) {
+        if (! $item) {
             return response()->json(['success' => false, 'message' => 'Item tidak ditemukan'], 404);
         }
 
@@ -124,7 +126,7 @@ class SimpruController extends Controller
     public function deleteItem(int $id): JsonResponse
     {
         $item = ItemJenis::find($id);
-        if (!$item) {
+        if (! $item) {
             return response()->json(['success' => false, 'message' => 'Item tidak ditemukan'], 404);
         }
 
@@ -136,6 +138,7 @@ class SimpruController extends Controller
         }
 
         $item->delete();
+
         return response()->json(['success' => true, 'message' => 'Item berhasil dihapus']);
     }
 
@@ -152,7 +155,7 @@ class SimpruController extends Controller
             $accessToken = PersonalAccessToken::findToken($token);
             $isAdmin = (bool) $accessToken?->tokenable;
         }
-        if (!$isAdmin && auth('sanctum')->check()) {
+        if (! $isAdmin && auth('sanctum')->check()) {
             $isAdmin = true;
         }
 
@@ -163,13 +166,19 @@ class SimpruController extends Controller
             ->get();
 
         $maskName = function (?string $name): string {
-            if (!$name || $name === '-') return '-';
+            if (! $name || $name === '-') {
+                return '-';
+            }
             $words = explode(' ', trim($name));
             $maskedWords = array_map(function ($word) {
                 $len = mb_strlen($word);
-                if ($len <= 2) return $word;
-                return mb_substr($word, 0, 2) . str_repeat('*', max(2, $len - 2));
+                if ($len <= 2) {
+                    return $word;
+                }
+
+                return mb_substr($word, 0, 2).str_repeat('*', max(2, $len - 2));
             }, $words);
+
             return implode(' ', $maskedWords);
         };
 
@@ -182,25 +191,30 @@ class SimpruController extends Controller
             $jenisName = $categoryMeta['jenis'];
 
             $itemNames = $itemList->map(function ($pi) {
-                return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
+                return ($pi->item?->nama ?? 'Item').($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
             })->join(', ');
 
-            $tglMulaiStr = $p->tgl_mulai ? Carbon::parse($p->tgl_mulai)->format('Y-m-d') : ($p->mulai ? substr((string)$p->mulai, 0, 10) : date('Y-m-d'));
-            $tglSelesaiStr = $p->tgl_selesai ? Carbon::parse($p->tgl_selesai)->format('Y-m-d') : ($p->selesai ? substr((string)$p->selesai, 0, 10) : $tglMulaiStr);
-            $waktuMulaiStr = $p->waktu_mulai ?: (strlen((string)$p->mulai) >= 16 ? substr((string)$p->mulai, 11, 5) : '08:00');
-            $waktuSelesaiStr = $p->waktu_selesai ?: (strlen((string)$p->selesai) >= 16 ? substr((string)$p->selesai, 11, 5) : '16:00');
+            $tglMulaiStr = $p->tgl_mulai ? Carbon::parse($p->tgl_mulai)->format('Y-m-d') : ($p->mulai ? substr((string) $p->mulai, 0, 10) : date('Y-m-d'));
+            $tglSelesaiStr = $p->tgl_selesai ? Carbon::parse($p->tgl_selesai)->format('Y-m-d') : ($p->selesai ? substr((string) $p->selesai, 0, 10) : $tglMulaiStr);
+            $waktuMulaiStr = $p->waktu_mulai ?: (strlen((string) $p->mulai) >= 16 ? substr((string) $p->mulai, 11, 5) : '08:00');
+            $waktuSelesaiStr = $p->waktu_selesai ?: (strlen((string) $p->selesai) >= 16 ? substr((string) $p->selesai, 11, 5) : '16:00');
 
             $rawName = $p->nama_pemohon ?? $p->nama_peminjam;
             $namaDisplay = $isAdmin ? ($rawName ?: '-') : $maskName($rawName);
             $unitDisplay = $isAdmin ? ($p->unit_pemohon ?? $p->unit_kerja) : 'Internal Kemenag Sleman';
             $keperluanDisplay = $isAdmin ? $p->keperluan : ($p->keperluan ? 'Kegiatan Kedinasan / Tugas Instansi' : '-');
 
+            $pihak = $p->pihak_pemohon ?: 'Internal Kemenag Sleman';
+            $isExternal = str_contains(strtolower($pihak), 'eksternal') || str_contains(strtolower($pihak), 'external');
+            $applicantType = $isExternal ? 'external' : 'internal';
+
             return [
                 'id' => $p->id_peminjaman ?? $p->id,
                 'id_peminjaman' => $p->id_peminjaman ?? $p->id,
                 'tgl_pengajuan' => Carbon::parse($p->tgl_pengajuan)->format('Y-m-d'),
-                'nip' => $isAdmin ? ($p->nip ?: '-') : null,
-                'pihak_pemohon' => $p->pihak_pemohon ?: 'Internal Kemenag Sleman',
+                'nip' => $isAdmin ? ($p->nip ?: ($isExternal ? '-' : '-')) : null,
+                'pihak_pemohon' => $pihak,
+                'applicant_type' => $applicantType,
                 'unit_pemohon' => $unitDisplay,
                 'unit_kerja' => $unitDisplay,
                 'nama_pemohon' => $namaDisplay,
@@ -213,8 +227,8 @@ class SimpruController extends Controller
                 'tgl_selesai' => $tglSelesaiStr,
                 'waktu_mulai' => $waktuMulaiStr,
                 'waktu_selesai' => $waktuSelesaiStr,
-                'mulai' => $p->mulai ?: ($tglMulaiStr . ' ' . $waktuMulaiStr),
-                'selesai' => $p->selesai ?: ($tglSelesaiStr . ' ' . $waktuSelesaiStr),
+                'mulai' => $p->mulai ?: ($tglMulaiStr.' '.$waktuMulaiStr),
+                'selesai' => $p->selesai ?: ($tglSelesaiStr.' '.$waktuSelesaiStr),
                 'kegiatan' => $keperluanDisplay,
                 'keperluan' => $keperluanDisplay,
                 'status' => $p->status,
@@ -225,7 +239,7 @@ class SimpruController extends Controller
                 'is_multi_item' => $isMulti,
                 'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
                 'petugas' => $isAdmin ? $p->petugas : null,
-                'items' => $itemList->map(fn($it) => [
+                'items' => $itemList->map(fn ($it) => [
                     'id' => $it->id,
                     'item_id' => $it->item_id,
                     'jumlah' => $it->jumlah,
@@ -254,7 +268,7 @@ class SimpruController extends Controller
             $accessToken = PersonalAccessToken::findToken($token);
             $isAdmin = (bool) $accessToken?->tokenable;
         }
-        if (!$isAdmin && auth('sanctum')->check()) {
+        if (! $isAdmin && auth('sanctum')->check()) {
             $isAdmin = true;
         }
 
@@ -263,7 +277,7 @@ class SimpruController extends Controller
             ->orWhere('id_peminjaman', $id)
             ->first();
 
-        if (!$peminjaman) {
+        if (! $peminjaman) {
             return response()->json([
                 'success' => false,
                 'message' => 'Data peminjaman tidak ditemukan',
@@ -278,17 +292,21 @@ class SimpruController extends Controller
         $jenisName = $categoryMeta['jenis'];
 
         $itemNames = $itemList->map(function ($pi) {
-            return ($pi->item?->nama ?? 'Item') . ($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
+            return ($pi->item?->nama ?? 'Item').($pi->jumlah > 1 ? " ({$pi->jumlah})" : '');
         })->join(', ');
 
-        $tglMulaiStr = $peminjaman->tgl_mulai ? Carbon::parse($peminjaman->tgl_mulai)->format('Y-m-d') : ($peminjaman->mulai ? substr((string)$peminjaman->mulai, 0, 10) : date('Y-m-d'));
-        $tglSelesaiStr = $peminjaman->tgl_selesai ? Carbon::parse($peminjaman->tgl_selesai)->format('Y-m-d') : ($peminjaman->selesai ? substr((string)$peminjaman->selesai, 0, 10) : $tglMulaiStr);
-        $waktuMulaiStr = $peminjaman->waktu_mulai ?: (strlen((string)$peminjaman->mulai) >= 16 ? substr((string)$peminjaman->mulai, 11, 5) : '08:00');
-        $waktuSelesaiStr = $peminjaman->waktu_selesai ?: (strlen((string)$peminjaman->selesai) >= 16 ? substr((string)$peminjaman->selesai, 11, 5) : '16:00');
+        $tglMulaiStr = $peminjaman->tgl_mulai ? Carbon::parse($peminjaman->tgl_mulai)->format('Y-m-d') : ($peminjaman->mulai ? substr((string) $peminjaman->mulai, 0, 10) : date('Y-m-d'));
+        $tglSelesaiStr = $peminjaman->tgl_selesai ? Carbon::parse($peminjaman->tgl_selesai)->format('Y-m-d') : ($peminjaman->selesai ? substr((string) $peminjaman->selesai, 0, 10) : $tglMulaiStr);
+        $waktuMulaiStr = $peminjaman->waktu_mulai ?: (strlen((string) $peminjaman->mulai) >= 16 ? substr((string) $peminjaman->mulai, 11, 5) : '08:00');
+        $waktuSelesaiStr = $peminjaman->waktu_selesai ?: (strlen((string) $peminjaman->selesai) >= 16 ? substr((string) $peminjaman->selesai, 11, 5) : '16:00');
 
         $rawName = $peminjaman->nama_pemohon ?? $peminjaman->nama_peminjam ?? '-';
         $nipRaw = (string) ($peminjaman->nip ?? '');
         $hpRaw = (string) ($peminjaman->nomor_hp ?? '');
+
+        $pihak = $peminjaman->pihak_pemohon ?: 'Internal Kemenag Sleman';
+        $isExternal = str_contains(strtolower($pihak), 'eksternal') || str_contains(strtolower($pihak), 'external');
+        $applicantType = $isExternal ? 'external' : 'internal';
 
         $namaDisplay = $rawName ?: '-';
         $nipDisplay = $nipRaw ?: '-';
@@ -296,14 +314,15 @@ class SimpruController extends Controller
         $penanggungJawabDisplay = $isAdmin ? ($peminjaman->penanggung_jawab ?: $rawName) : null;
         $keperluanDisplay = $peminjaman->keperluan ?: '-';
 
-        $hasRealSurat = !empty($peminjaman->surat_url) || !empty($peminjaman->surat_peminjaman);
+        $hasRealSurat = ! empty($peminjaman->surat_url) || ! empty($peminjaman->surat_peminjaman);
 
         $result = [
             'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
             'id' => $peminjaman->id_peminjaman ?? $peminjaman->id,
             'tgl_pengajuan' => Carbon::parse($peminjaman->tgl_pengajuan)->format('Y-m-d'),
             'nip' => $nipDisplay,
-            'pihak_pemohon' => $peminjaman->pihak_pemohon ?: 'Internal Kemenag Sleman',
+            'pihak_pemohon' => $pihak,
+            'applicant_type' => $applicantType,
             'unit_pemohon' => $peminjaman->unit_pemohon ?? $peminjaman->unit_kerja,
             'unit_kerja' => $peminjaman->unit_kerja ?? $peminjaman->unit_pemohon,
             'nama_pemohon' => $namaDisplay,
@@ -315,13 +334,13 @@ class SimpruController extends Controller
             'tgl_selesai' => $tglSelesaiStr,
             'waktu_mulai' => $waktuMulaiStr,
             'waktu_selesai' => $waktuSelesaiStr,
-            'mulai' => $peminjaman->mulai ?: ($tglMulaiStr . ' ' . $waktuMulaiStr),
-            'selesai' => $peminjaman->selesai ?: ($tglSelesaiStr . ' ' . $waktuSelesaiStr),
+            'mulai' => $peminjaman->mulai ?: ($tglMulaiStr.' '.$waktuMulaiStr),
+            'selesai' => $peminjaman->selesai ?: ($tglSelesaiStr.' '.$waktuSelesaiStr),
             'keperluan' => $keperluanDisplay,
             'surat_url' => ($isAdmin && $hasRealSurat) ? "/api/peminjaman/{$peminjaman->id}/surat" : null,
             'surat_peminjaman' => ($isAdmin && $hasRealSurat) ? ($peminjaman->surat_peminjaman ?? $peminjaman->surat_url) : null,
             'surat_terlampir' => $hasRealSurat,
-            'is_public_view' => !$isAdmin,
+            'is_public_view' => ! $isAdmin,
             'status' => $peminjaman->status,
             'petugas' => $peminjaman->petugas,
             'jenis' => $jenisName,
@@ -329,7 +348,7 @@ class SimpruController extends Controller
             'is_multi_item' => $isMulti,
             'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
             'ruangan' => $itemNames ?: 'Sarana Prasarana',
-            'items' => $itemList->map(fn($it) => [
+            'items' => $itemList->map(fn ($it) => [
                 'id' => $it->id,
                 'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
                 'item_id' => $it->item_id,
@@ -360,11 +379,11 @@ class SimpruController extends Controller
             $accessToken = PersonalAccessToken::findToken($token);
             $user = $accessToken?->tokenable;
         }
-        if (!$user && auth('sanctum')->check()) {
+        if (! $user && auth('sanctum')->check()) {
             $user = auth('sanctum')->user();
         }
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Akses ditolak. Dokumen surat dinas hanya dapat diakses oleh petugas terautentikasi.',
@@ -372,14 +391,14 @@ class SimpruController extends Controller
         }
 
         $peminjaman = Peminjaman::where('id', $id)->orWhere('id_peminjaman', $id)->first();
-        if (!$peminjaman || (empty($peminjaman->surat_url) && empty($peminjaman->surat_peminjaman))) {
+        if (! $peminjaman || (empty($peminjaman->surat_url) && empty($peminjaman->surat_peminjaman))) {
             return response()->json([
                 'success' => false,
                 'message' => 'Berkas surat tidak ditemukan.',
             ], 404);
         }
 
-        $filename = $peminjaman->surat_peminjaman ?? basename((string)$peminjaman->surat_url);
+        $filename = $peminjaman->surat_peminjaman ?? basename((string) $peminjaman->surat_url);
         $path = $peminjaman->surat_url ?? $peminjaman->surat_peminjaman;
         if (str_starts_with($path, '/storage/')) {
             $path = substr($path, 9);
@@ -389,21 +408,21 @@ class SimpruController extends Controller
         if (Storage::disk('local')->exists($path)) {
             return Storage::disk('local')->response($path, $filename);
         }
-        if (Storage::disk('local')->exists('surat/' . $path)) {
-            return Storage::disk('local')->response('surat/' . $path, $filename);
+        if (Storage::disk('local')->exists('surat/'.$path)) {
+            return Storage::disk('local')->response('surat/'.$path, $filename);
         }
 
         // 2. Cek disk 'public'
         if (Storage::disk('public')->exists($path)) {
             return Storage::disk('public')->response($path, $filename);
         }
-        if (Storage::disk('public')->exists('surat/' . $path)) {
-            return Storage::disk('public')->response('surat/' . $path, $filename);
+        if (Storage::disk('public')->exists('surat/'.$path)) {
+            return Storage::disk('public')->response('surat/'.$path, $filename);
         }
 
         // 3. Fallback: buat surat PDF resmi otomatis agar admin selalu dapat mengecek dokumen
         $pdfContent = $this->buildSampleSuratPdf($peminjaman);
-        $targetPath = 'surat/' . basename($filename);
+        $targetPath = 'surat/'.basename($filename);
         Storage::disk('local')->put($targetPath, $pdfContent);
 
         return Storage::disk('local')->response($targetPath, $filename);
@@ -422,7 +441,7 @@ class SimpruController extends Controller
         $penanggungJawab = $peminjaman->penanggung_jawab ?? $pemohon;
         $keperluan = $peminjaman->keperluan ?? '-';
         $tglMulai = $peminjaman->tgl_mulai ?? '-';
-        $waktu = ($peminjaman->waktu_mulai ?? '-') . ' s/d ' . ($peminjaman->waktu_selesai ?? '-');
+        $waktu = ($peminjaman->waktu_mulai ?? '-').' s/d '.($peminjaman->waktu_selesai ?? '-');
         $status = $peminjaman->status ?? 'Menunggu Persetujuan';
         $tglPengajuan = $peminjaman->tgl_pengajuan ?? date('Y-m-d');
 
@@ -433,16 +452,16 @@ class SimpruController extends Controller
             '=====================================================================',
             'SURAT PERMOHONAN PEMINJAMAN SARANA DAN PRASARANA DINAS',
             '',
-            'Nomor Registrasi   : ' . $id,
-            'Tanggal Pengajuan  : ' . $tglPengajuan,
-            'Nama Peminjam      : ' . $pemohon,
-            'NIP                : ' . $nip,
-            'Unit Kerja / Seksi : ' . $unit,
-            'Kontak / WhatsApp  : ' . $hp,
-            'Penanggung Jawab   : ' . $penanggungJawab,
-            'Keperluan          : ' . substr($keperluan, 0, 75),
-            'Jadwal Pelaksanaan : ' . $tglMulai . ' (' . $waktu . ')',
-            'Status Pengajuan   : ' . $status,
+            'Nomor Registrasi   : '.$id,
+            'Tanggal Pengajuan  : '.$tglPengajuan,
+            'Nama Peminjam      : '.$pemohon,
+            'NIP                : '.$nip,
+            'Unit Kerja / Seksi : '.$unit,
+            'Kontak / WhatsApp  : '.$hp,
+            'Penanggung Jawab   : '.$penanggungJawab,
+            'Keperluan          : '.substr($keperluan, 0, 75),
+            'Jadwal Pelaksanaan : '.$tglMulai.' ('.$waktu.')',
+            'Status Pengajuan   : '.$status,
             '',
             '=====================================================================',
             'Surat permohonan dinas ini terdaftar secara resmi pada SIMPRU Kemenag Sleman.',
@@ -454,7 +473,7 @@ class SimpruController extends Controller
             $clean = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $line);
             $stream .= "({$clean}) '\n";
         }
-        $stream .= "ET";
+        $stream .= 'ET';
         $streamLen = strlen($stream);
 
         $obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
@@ -477,7 +496,7 @@ class SimpruController extends Controller
         );
         $trailer = "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
 
-        return $header . $obj1 . $obj2 . $obj3 . $obj4 . $obj5 . $xref . $trailer;
+        return $header.$obj1.$obj2.$obj3.$obj4.$obj5.$xref.$trailer;
     }
 
     /**
@@ -496,14 +515,14 @@ class SimpruController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if (!$peminjaman) {
+            if (! $peminjaman) {
                 return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
             }
 
             // Jika status Disetujui, delegasikan ke BookingService untuk pencegahan double-booking & row-lock
             if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
                 $result = $this->bookingService->approvePeminjaman($peminjaman, $validated['petugas'] ?? null);
-                if (!$result['success']) {
+                if (! $result['success']) {
                     return response()->json([
                         'success' => false,
                         'message' => $result['message'],

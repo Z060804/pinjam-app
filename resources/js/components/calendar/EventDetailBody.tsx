@@ -18,6 +18,7 @@ export const EventDetailBody: React.FC<EventDetailBodyProps> = ({ event }) => {
   const itemName = event.item_dipinjam ?? event.ruangan ?? 'Sarana Prasarana';
   const pemohon = event.nama_pemohon ?? event.nama_peminjam;
   const unit = event.unit_pemohon ?? event.unit_kerja;
+  const isExternal = event.applicant_type === 'external' || (event.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
   const labelKategori = event.jenis === 'kendaraan' ? 'KENDARAAN' : event.jenis === 'perlengkapan' ? 'PERLENGKAPAN' : event.jenis === 'kombinasi' ? 'MULTI-ITEM (LINTAS KATEGORI)' : 'RUANGAN / ITEM';
 
   return (
@@ -28,7 +29,18 @@ export const EventDetailBody: React.FC<EventDetailBodyProps> = ({ event }) => {
       </div>
 
       <div>
-        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">PEMOHON &amp; INSTANSI</p>
+        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">PEMOHON &amp; ASAL INSTANSI</p>
+        <div className="flex items-center gap-2 mb-1">
+          {isExternal ? (
+            <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+              Eksternal
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              Internal Kemenag Sleman
+            </span>
+          )}
+        </div>
         <p className="text-sm font-semibold text-slate-700">{pemohon} {unit ? `(${unit})` : ''}</p>
       </div>
 

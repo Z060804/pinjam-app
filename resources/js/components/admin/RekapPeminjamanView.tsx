@@ -18,6 +18,7 @@ export const RekapPeminjamanView: React.FC = () => {
   const [dateTo, setDateTo] = useState('');
   const [selectedPermohonan, setSelectedPermohonan] = useState<Permohonan | null>(null);
   const [jenisFilter, setJenisFilter] = useState<'Semua' | Permohonan['jenis']>('Semua');
+  const [applicantFilter, setApplicantFilter] = useState<'Semua' | 'internal' | 'external'>('Semua');
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -50,6 +51,7 @@ export const RekapPeminjamanView: React.FC = () => {
     setDateTo('');
     setActiveTab('Semua');
     setJenisFilter('Semua');
+    setApplicantFilter('Semua');
   };
 
   const filtered = list
@@ -61,9 +63,15 @@ export const RekapPeminjamanView: React.FC = () => {
         Boolean(p.kategori_list?.includes(jenisFilter)) ||
         (jenisFilter === 'kombinasi' && (Boolean(p.is_multi_item) || (p.kategori_list ? p.kategori_list.length > 1 : false))) ||
         Boolean(p.items?.some((it) => it.kategori === jenisFilter));
+
+      const isExternal = p.applicant_type === 'external' || (p.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
+      const matchApplicant =
+        applicantFilter === 'Semua' ||
+        (applicantFilter === 'external' ? isExternal : !isExternal);
+
       const matchFrom = !dateFrom || p.tgl_mulai >= dateFrom;
       const matchTo = !dateTo || p.tgl_mulai <= dateTo;
-      return matchStatus && matchJenis && matchFrom && matchTo;
+      return matchStatus && matchJenis && matchApplicant && matchFrom && matchTo;
     })
     .sort((a, b) => {
       const dateA = a.tgl_mulai ?? '';
@@ -174,9 +182,11 @@ export const RekapPeminjamanView: React.FC = () => {
             dateFrom={dateFrom}
             dateTo={dateTo}
             jenisFilter={jenisFilter}
+            applicantFilter={applicantFilter}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
             onJenisFilterChange={setJenisFilter}
+            onApplicantFilterChange={setApplicantFilter}
             onReset={resetFilter}
           />
           <RekapTable

@@ -43,6 +43,8 @@ export const AgendaListView: React.FC<AgendaListViewProps> = ({ events, onSelect
         const unit = ev.unit_pemohon ?? ev.unit_kerja;
         const idTiket = ev.id ?? ev.id_peminjaman;
 
+        const isExternal = ev.applicant_type === 'external' || (ev.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
+
         return (
           <div
             key={idTiket}
@@ -55,6 +57,15 @@ export const AgendaListView: React.FC<AgendaListViewProps> = ({ events, onSelect
                   {idTiket}
                 </span>
                 <BadgeStatus status={ev.status} />
+                {isExternal ? (
+                  <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                    Eksternal
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    Internal Kemenag Sleman
+                  </span>
+                )}
                 {ev.jenis && (
                   <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full capitalize">
                     {ev.jenis}

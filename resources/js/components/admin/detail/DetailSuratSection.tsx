@@ -7,12 +7,14 @@ interface DetailSuratSectionProps {
   id: string;
   suratUrl?: string | null;
   suratPeminjaman?: string | null;
+  isOptional?: boolean;
 }
 
 export const DetailSuratSection: React.FC<DetailSuratSectionProps> = ({
   id,
   suratUrl,
   suratPeminjaman,
+  isOptional,
 }) => {
   const [openingSurat, setOpeningSurat] = useState(false);
 
@@ -67,7 +69,9 @@ export const DetailSuratSection: React.FC<DetailSuratSectionProps> = ({
   return (
     <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-500 text-xs">
       <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-      <span>Surat Permohonan Tidak Dilampirkan</span>
+      <span>
+        Surat Permohonan Tidak Dilampirkan{isOptional ? ' (Bersifat opsional untuk pemohon internal ruangan)' : ''}
+      </span>
     </div>
   );
 };

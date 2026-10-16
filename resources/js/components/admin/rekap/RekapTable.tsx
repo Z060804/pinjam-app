@@ -66,7 +66,7 @@ export const RekapTable: React.FC<RekapTableProps> = ({
                 <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Jadwal Peminjaman</th>
                 <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Nama Peminjam</th>
                 <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Jenis Layanan</th>
-                <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Unit Kerja</th>
+                <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Asal Instansi / Unit Kerja</th>
                 <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Keperluan</th>
                 <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Item Dipinjam</th>
                 <th className="text-left px-4 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap">Status</th>
@@ -77,6 +77,7 @@ export const RekapTable: React.FC<RekapTableProps> = ({
               {filtered.map((p, i) => {
                 const cfg = STATUS_CONFIG[p.status];
                 const StatusIcon = cfg.icon;
+                const isExternal = p.applicant_type === 'external' || (p.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
                 return (
                   <tr
                     key={p.id}
@@ -90,6 +91,17 @@ export const RekapTable: React.FC<RekapTableProps> = ({
                       )}
                     </td>
                     <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {isExternal ? (
+                          <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                            Eksternal
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Internal Kemenag Sleman
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs font-bold text-slate-800">{p.nama_pemohon}</div>
                       <div className="text-[10px] text-slate-400">{p.nomor_hp ?? '-'}</div>
                     </td>

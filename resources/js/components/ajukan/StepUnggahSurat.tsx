@@ -20,6 +20,8 @@ interface StepUnggahSuratProps {
   namaPeminjam: string;
   mulai: string;
   selesai: string;
+  applicantType?: 'internal' | 'external';
+  isSuratWajib?: boolean;
 }
 
 export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
@@ -33,6 +35,8 @@ export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
   namaPeminjam,
   mulai,
   selesai,
+  applicantType = 'internal',
+  isSuratWajib = false,
 }) => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -76,11 +80,28 @@ export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-bold text-slate-900">4. Unggah Surat Permohonan &amp; Konfirmasi</h3>
-        <p className="text-xs text-slate-500">
-          Lampirkan surat permohonan dinas bertanda tangan pimpinan unit kerja dalam format PDF (opsional).
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">4. Unggah Surat Permohonan &amp; Konfirmasi</h3>
+          <p className="text-xs text-slate-500">
+            {isSuratWajib
+              ? applicantType === 'external'
+                ? 'Pemohon eksternal wajib melampirkan surat permohonan dinas resmi berkop surat bertanda tangan pimpinan.'
+                : 'Peminjaman kendaraan atau barang/peralatan wajib melampirkan surat permohonan dinas resmi.'
+              : 'Surat permohonan dinas bersifat opsional untuk pemohon internal yang hanya meminjam ruangan.'}
+          </p>
+        </div>
+        <div>
+          <span
+            className={`inline-flex items-center text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border ${
+              isSuratWajib
+                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            }`}
+          >
+            {isSuratWajib ? 'Wajib Dilampirkan' : 'Bersifat Opsional'}
+          </span>
+        </div>
       </div>
 
       <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-emerald-400 transition-colors bg-slate-50/50">
@@ -138,7 +159,7 @@ export const StepUnggahSurat: React.FC<StepUnggahSuratProps> = ({
           <CheckCircle className="w-4 h-4 text-[#009966]" />
           Ringkasan Pemohon
         </div>
-        <p><strong>Nama:</strong> {namaPeminjam || '-'} (NIP. {nip || '-'})</p>
+        <p><strong>Nama:</strong> {namaPeminjam || '-'} {nip ? `(NIP. ${nip})` : applicantType === 'external' ? '(Eksternal)' : ''}</p>
         <p><strong>Rentang Waktu:</strong> {mulai || '-'} s/d {selesai || '-'}</p>
       </div>
     </div>

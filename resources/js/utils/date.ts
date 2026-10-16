@@ -59,3 +59,27 @@ export function formatTimeRangeDisplay(mulaiStr: string, selesaiStr: string): st
   
   return `${formatDateDisplay(m.date)} ${m.time} s/d ${formatDateDisplay(s.date)} ${s.time} WIB`;
 }
+
+export function buildDateTimeString(date: string, time: string): string {
+  if (!date) return '';
+  const cleanTime = (time || '08:00').substring(0, 5);
+  return `${date}T${cleanTime}`;
+}
+
+export function isDateTimeRangeValid(mulaiStr: string, selesaiStr: string): boolean {
+  if (!mulaiStr || !selesaiStr) return false;
+  const m = extractDateParts(mulaiStr);
+  const s = extractDateParts(selesaiStr);
+
+  if (!m.date || !s.date || !m.time || !s.time) return false;
+
+  if (m.date < s.date) {
+    return true;
+  }
+
+  if (m.date === s.date) {
+    return m.time < s.time;
+  }
+
+  return false;
+}

@@ -117,11 +117,19 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
 
           <DetailBorrowerSection permohonan={permohonan} />
           <DetailScheduleSection permohonan={permohonan} />
-          <DetailSuratSection
-            id={permohonan.id}
-            suratUrl={permohonan.surat_url}
-            suratPeminjaman={permohonan.surat_peminjaman}
-          />
+          {(() => {
+            const isExternal = permohonan.applicant_type === 'external' || (permohonan.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
+            const isRoomOnly = (permohonan.jenis === 'ruangan' || (permohonan.kategori_list?.length === 1 && permohonan.kategori_list[0] === 'ruangan')) && !permohonan.items?.some(it => it.kategori && it.kategori !== 'ruangan');
+            const isSuratOptional = !isExternal && isRoomOnly;
+            return (
+              <DetailSuratSection
+                id={permohonan.id}
+                suratUrl={permohonan.surat_url}
+                suratPeminjaman={permohonan.surat_peminjaman}
+                isOptional={isSuratOptional}
+              />
+            );
+          })()}
         </div>
 
         <div className="px-6 pb-6">
