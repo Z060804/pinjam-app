@@ -3,15 +3,15 @@ import axios from '../../services/api';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ItemJenis, MasterJenis, FormPeminjamanState } from '../../types';
 import { StepIndicator } from './StepIndicator';
-import { StepPilihItem } from './StepPilihItem';
+import { StepPilihItem, isAulaLantai3 } from './StepPilihItem';
 import { StepDataPeminjam } from './StepDataPeminjam';
 import { StepWaktuDanKeperluan } from './StepWaktuDanKeperluan';
 import { StepUnggahSurat } from './StepUnggahSurat';
 import { RingkasanSidebar } from './RingkasanSidebar';
 import { SuccessModal } from './SuccessModal';
 import { StepNavigation } from './StepNavigation';
-import { submitPeminjaman } from './ajukanSubmit';
-import { isDateTimeRangeValid } from '../../utils/date';
+import { submitPeminjaman, SubmitPeminjamanResult } from './ajukanSubmit';
+import { isDateTimeRangeValid, getTodayWIB } from '../../utils/date';
 import { AlertTriangle } from 'lucide-react';
 
 interface AjukanPeminjamanViewProps {
@@ -35,10 +35,12 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   const [items, setItems] = useState<ItemJenis[]>([]);
   const [categories, setCategories] = useState<MasterJenis[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [createdBooking, setCreatedBooking] = useState<SubmitPeminjamanResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+
+  const todayWIB = getTodayWIB();
 
   const [form, setForm] = useState<FormPeminjamanState>({
     applicant_type: 'internal',
@@ -47,11 +49,14 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     nama_peminjam: '',
     unit_kerja: '',
     nomor_hp: '',
-    mulai: '2026-10-15T08:00',
-    selesai: '2026-10-15T15:00',
+    mulai: `${todayWIB}T08:00`,
+    selesai: `${todayWIB}T16:00`,
     keperluan: '',
     surat_peminjaman_name: '',
     selected_items: [],
+    is_recurring: false,
+    recurring_frequency: 'weekly',
+    recurring_end_date: todayWIB,
   });
 
   useEffect(() => {
@@ -98,24 +103,32 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     .filter((c) => c.item.id_jenis === 2)
     .reduce((sum, c) => sum + c.jumlah, 0);
 
-  const equipmentCount = form.selected_items
-    .filter((c) => c.item.id_jenis === 3)
-    .reduce((sum, c) => sum + c.jumlah, 0);
-
-  const isSuratWajib =
-    form.applicant_type === 'external' || vehicleCount > 0 || equipmentCount > 0;
+  // Surat HANYA wajib untuk pemohon eksternal. Untuk pemohon internal, surat selalu opsional.
+  const isSuratWajib = form.applicant_type === 'external';
 
   const handleApplicantTypeChange = (newType: 'internal' | 'external') => {
     setErrorMessage(null);
-    setForm((prev) => ({
-      ...prev,
-      applicant_type: newType,
-      pihak_pemohon:
-        newType === 'external'
-          ? 'Eksternal (Madrasah/KUA/Lainnya)'
-          : 'Internal Kemenag Sleman',
-      nip: newType === 'external' ? '' : prev.nip, // Bersihkan NIP jika beralih ke eksternal
-    }));
+    setForm((prev) => {
+      // Jika beralih ke eksternal, bersihkan item yang tidak diperbolehkan (hanya izinkan Aula Lantai 3 maks 1)
+      let adjustedItems = prev.selected_items;
+      if (newType === 'external') {
+        adjustedItems = prev.selected_items
+          .filter((c) => isAulaLantai3(c.item))
+          .map((c) => ({ ...c, jumlah: 1 }))
+          .slice(0, 1);
+      }
+
+      return {
+        ...prev,
+        applicant_type: newType,
+        pihak_pemohon:
+          newType === 'external'
+            ? 'Eksternal (Madrasah/KUA/Lainnya)'
+            : 'Internal Kemenag Sleman',
+        nip: newType === 'external' ? '' : prev.nip,
+        selected_items: adjustedItems,
+      };
+    });
   };
 
   const handleToggleItem = (item: ItemJenis, jumlah: number) => {
@@ -129,26 +142,23 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
         };
       }
 
-      // Validasi batasan kuota untuk pemohon eksternal
+      // Validasi batasan ketat untuk pemohon eksternal
       if (prev.applicant_type === 'external') {
-        if (item.id_jenis === 1) {
-          const currentRooms = prev.selected_items
-            .filter((c) => c.item.id_jenis === 1)
-            .reduce((s, c) => s + c.jumlah, 0);
-          if (currentRooms >= 1) {
-            setErrorMessage('Pemohon eksternal hanya diperbolehkan memilih maksimal 1 ruangan.');
-            return prev;
-          }
+        if (!isAulaLantai3(item)) {
+          setErrorMessage('Pemohon eksternal hanya dapat mengajukan peminjaman Aula Lantai 3.');
+          return prev;
         }
-        if (item.id_jenis === 2) {
-          const currentVehicles = prev.selected_items
-            .filter((c) => c.item.id_jenis === 2)
-            .reduce((s, c) => s + c.jumlah, 0);
-          if (currentVehicles >= 1) {
-            setErrorMessage('Pemohon eksternal hanya diperbolehkan memilih maksimal 1 kendaraan.');
-            return prev;
-          }
+
+        const currentAula = prev.selected_items.filter((c) => isAulaLantai3(c.item));
+        if (currentAula.length >= 1) {
+          setErrorMessage('Pemohon eksternal hanya diperbolehkan memilih maksimal 1 unit Aula Lantai 3.');
+          return prev;
         }
+
+        return {
+          ...prev,
+          selected_items: [{ item, jumlah: 1 }],
+        };
       }
 
       return { ...prev, selected_items: [...prev.selected_items, { item, jumlah }] };
@@ -161,12 +171,8 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
       ...prev,
       selected_items: prev.selected_items.map((c) => {
         if (c.item.id !== itemId) return c;
-        if (
-          prev.applicant_type === 'external' &&
-          (c.item.id_jenis === 1 || c.item.id_jenis === 2) &&
-          delta > 0
-        ) {
-          return c; // Batasi maksimal 1 unit untuk ruangan/kendaraan eksternal
+        if (prev.applicant_type === 'external') {
+          return { ...c, jumlah: 1 }; // Batasi strictly 1 unit untuk pemohon eksternal
         }
         return { ...c, jumlah: Math.max(1, c.jumlah + delta) };
       }),
@@ -184,8 +190,11 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
   const canProceed = (): boolean => {
     if (step === 1) {
       if (form.selected_items.length === 0) return false;
-      if (form.applicant_type === 'external' && (roomCount > 1 || vehicleCount > 1)) {
-        return false;
+      if (form.applicant_type === 'external') {
+        const hasDisallowed = form.selected_items.some((c) => !isAulaLantai3(c.item) || c.jumlah > 1);
+        if (hasDisallowed || form.selected_items.length > 1) {
+          return false;
+        }
       }
       return true;
     }
@@ -199,18 +208,25 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
       if (form.applicant_type === 'internal') {
         if (!form.nip.trim()) return false;
       }
-      if (form.applicant_type === 'external') {
-        if (roomCount > 1 || vehicleCount > 1) return false;
-      }
       return true;
     }
     if (step === 3) {
-      return Boolean(
+      const hasValidSchedule = Boolean(
         form.mulai &&
         form.selesai &&
         form.keperluan.trim() &&
         isDateTimeRangeValid(form.mulai, form.selesai)
       );
+      if (!hasValidSchedule) return false;
+
+      if (form.is_recurring) {
+        const startDate = form.mulai.substring(0, 10);
+        if (!form.recurring_end_date || form.recurring_end_date < startDate) {
+          return false;
+        }
+      }
+
+      return true;
     }
     if (step === 4) {
       if (fileError) return false;
@@ -232,9 +248,7 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
 
     if (isSuratWajib && !uploadedFile && !form.surat_peminjaman_name) {
       setErrorMessage(
-        form.applicant_type === 'external'
-          ? 'Pemohon eksternal wajib mengunggah surat permohonan peminjaman resmi bertanda tangan pimpinan (format PDF, maks. 1 MB).'
-          : 'Peminjaman kendaraan atau barang/peralatan wajib melampirkan berkas surat permohonan resmi (format PDF, maks. 1 MB).'
+        'Pemohon eksternal wajib mengunggah surat permohonan peminjaman resmi bertanda tangan pimpinan (format PDF, maks. 1 MB).'
       );
       return;
     }
@@ -253,8 +267,8 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const id = await submitPeminjaman(form, uploadedFile);
-      setCreatedId(id);
+      const result = await submitPeminjaman(form, uploadedFile);
+      setCreatedBooking(result);
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
       const msg = errorObj.response?.data?.message ?? errorObj.message ?? 'Gagal mengirim pengajuan peminjaman';
@@ -308,9 +322,21 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
                 mulai={form.mulai}
                 selesai={form.selesai}
                 keperluan={form.keperluan}
+                isRecurring={form.is_recurring}
+                recurringFrequency={form.recurring_frequency}
+                recurringEndDate={form.recurring_end_date}
                 onChangeField={(f, v) => {
                   setErrorMessage(null);
                   setForm((prev) => ({ ...prev, [f]: v }));
+                }}
+                onChangeRecurring={(recurring, freq, endDate) => {
+                  setErrorMessage(null);
+                  setForm((prev) => ({
+                    ...prev,
+                    is_recurring: recurring,
+                    recurring_frequency: freq,
+                    recurring_end_date: endDate,
+                  }));
                 }}
               />
             )}
@@ -369,9 +395,14 @@ export const AjukanPeminjamanView: React.FC<AjukanPeminjamanViewProps> = ({
         </div>
       </div>
 
-      {createdId && (
+      {createdBooking && (
         <SuccessModal
-          idPeminjaman={createdId}
+          idPeminjaman={createdBooking.id_peminjaman}
+          status={createdBooking.status}
+          isRecurring={createdBooking.is_recurring}
+          recurringFrequency={createdBooking.recurring_frequency}
+          recurringEndDate={createdBooking.recurring_end_date}
+          recurringSchedules={createdBooking.recurring_schedules}
           onTrack={(id) => {
             if (onTrackRedirect) onTrackRedirect(id);
             navigate(`/pelacakan?id=${encodeURIComponent(id)}`);

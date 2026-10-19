@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractDateParts, buildDateTimeString, isDateTimeRangeValid } from '../../utils/date';
+import { extractDateParts, buildDateTimeString, isDateTimeRangeValid, generateWeeklyDates, formatDateIndonesianWithDay } from '../../utils/date';
 import { HOURS_24, MINUTES_60 } from '../common/TimePicker24';
 import { normalizeDate } from './ajukanSubmit';
 
@@ -95,5 +95,52 @@ describe('StepWaktuDanKeperluan Date & 24-Hour Time Logic', () => {
 
     const sqlReady = normalizeDate(raw);
     expect(sqlReady).toBe('2026-10-15 09:25:00');
+  });
+
+  describe('Weekly Recurring Schedule Calculation (generateWeeklyDates)', () => {
+    it('generates 7-day intervals from start date to end date correctly', () => {
+      // 19 Oct to 9 Nov = 19 Oct, 26 Oct, 2 Nov, 9 Nov (4 weeks)
+      const dates = generateWeeklyDates('2026-10-19', '2026-11-09');
+      expect(dates).toEqual([
+        '2026-10-19',
+        '2026-10-26',
+        '2026-11-02',
+        '2026-11-09',
+      ]);
+    });
+
+    it('returns single date if end date equals start date', () => {
+      const dates = generateWeeklyDates('2026-10-19', '2026-10-19');
+      expect(dates).toEqual(['2026-10-19']);
+    });
+
+    it('returns empty array if end date is before start date', () => {
+      const dates = generateWeeklyDates('2026-10-19', '2026-10-18');
+      expect(dates).toEqual([]);
+    });
+
+    it('handles February leap years and year-end crossovers correctly', () => {
+      // Cross over from 2028-02-21 to 2028-03-06 (2028 is leap year, 29 Feb exists)
+      const leapYearDates = generateWeeklyDates('2028-02-21', '2028-03-06');
+      expect(leapYearDates).toEqual([
+        '2028-02-21',
+        '2028-02-28', // 21 + 7
+        '2028-03-06', // 28 + 7 in leap year = 29, 1, 2, 3, 4, 5, 6 March
+      ]);
+
+      // Year-end crossover 2026-12-28 to 2027-01-11
+      const yearCrossover = generateWeeklyDates('2026-12-28', '2027-01-11');
+      expect(yearCrossover).toEqual([
+        '2026-12-28',
+        '2027-01-04',
+        '2027-01-11',
+      ]);
+    });
+
+    it('formats Indonesian date with day name accurately', () => {
+      // 2026-10-19 is Monday (Senin)
+      const formatted = formatDateIndonesianWithDay('2026-10-19');
+      expect(formatted).toBe('Senin, 19 Oktober 2026');
+    });
   });
 });

@@ -9,6 +9,8 @@ import { RekapStatsCards } from './rekap/RekapStatsCards';
 import { RekapFilterBar } from './rekap/RekapFilterBar';
 import { RekapTable } from './rekap/RekapTable';
 
+import { groupPermohonanForRekap } from '../../utils/rekapGrouping';
+
 export const RekapPeminjamanView: React.FC = () => {
   const [list, setList] = useState<Permohonan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,9 +43,8 @@ export const RekapPeminjamanView: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  const handleStatusUpdated = (id: string, newStatus: Permohonan['status']) => {
-    setList((prev) => prev.map((p) => (p.id === id ? { ...p, status: newStatus } : p)));
-    setSelectedPermohonan((prev) => (prev?.id === id ? { ...prev, status: newStatus } : prev));
+  const handleStatusUpdated = () => {
+    loadData();
   };
 
   const resetFilter = () => {
@@ -54,9 +55,17 @@ export const RekapPeminjamanView: React.FC = () => {
     setApplicantFilter('Semua');
   };
 
-  const filtered = list
-    .filter((p) => {
-      const matchStatus = activeTab === 'Semua' || p.status === activeTab;
+  // Group recurring series into 1 single row for the rekap table
+  const groupedList = React.useMemo(() => groupPermohonanForRekap(list), [list]);
+
+  // Filtered mempertahankan urutan kronologis stabil dari groupedList
+  const filtered = React.useMemo(() => {
+    return groupedList.filter((p) => {
+      const matchStatus =
+        activeTab === 'Semua' ||
+        p.status === activeTab ||
+        Boolean(p.recurring_schedules && p.recurring_schedules.some((s) => s.status === activeTab));
+
       const matchJenis =
         jenisFilter === 'Semua' ||
         p.jenis === jenisFilter ||
@@ -69,25 +78,21 @@ export const RekapPeminjamanView: React.FC = () => {
         applicantFilter === 'Semua' ||
         (applicantFilter === 'external' ? isExternal : !isExternal);
 
-      const matchFrom = !dateFrom || p.tgl_mulai >= dateFrom;
+      const matchFrom = !dateFrom || (p.tgl_selesai ?? p.tgl_mulai) >= dateFrom;
       const matchTo = !dateTo || p.tgl_mulai <= dateTo;
       return matchStatus && matchJenis && matchApplicant && matchFrom && matchTo;
-    })
-    .sort((a, b) => {
-      const dateA = a.tgl_mulai ?? '';
-      const dateB = b.tgl_mulai ?? '';
-      if (dateA !== dateB) return dateA.localeCompare(dateB);
-      return (a.waktu_mulai ?? '').localeCompare(b.waktu_mulai ?? '');
     });
+  }, [groupedList, activeTab, jenisFilter, applicantFilter, dateFrom, dateTo]);
 
   const counts = {
-    total: list.length,
-    menunggu: list.filter((p) => p.status === 'Menunggu Persetujuan').length,
-    disetujui: list.filter((p) => p.status === 'Disetujui').length,
-    ditolak: list.filter((p) => p.status === 'Tidak Disetujui').length,
-    dibatalkan: list.filter((p) => p.status === 'Dibatalkan').length,
+    total: groupedList.length,
+    menunggu: groupedList.filter((p) => p.status === 'Menunggu Persetujuan').length,
+    disetujui: groupedList.filter((p) => p.status === 'Disetujui').length,
+    ditolak: groupedList.filter((p) => p.status === 'Tidak Disetujui').length,
+    dibatalkan: groupedList.filter((p) => p.status === 'Dibatalkan').length,
   };
 
+  // Kalender tetap menggunakan data per-sesi individual lengkap
   const approvedList = list.filter((p) => p.status === 'Disetujui');
   const approvedEvents: MasterPeminjaman[] = approvedList.map((p) => ({
     ...p,
@@ -190,7 +195,7 @@ export const RekapPeminjamanView: React.FC = () => {
             onReset={resetFilter}
           />
           <RekapTable
-            list={list}
+            list={groupedList}
             filtered={filtered}
             loading={loading}
             activeTab={activeTab}

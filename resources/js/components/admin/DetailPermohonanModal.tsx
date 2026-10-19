@@ -19,17 +19,25 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
   onClose,
   onStatusUpdated,
 }) => {
+  const [currentPermohonan, setCurrentPermohonan] = useState<Permohonan>(permohonan);
   const [updating, setUpdating] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const cfg = STATUS_CONFIG[permohonan.status];
+  const cfg = STATUS_CONFIG[currentPermohonan.status];
   const StatusIcon = cfg.icon;
 
-  const handleChangeStatus = async (status: Permohonan['status']) => {
+  const handleChangeStatus = async (status: Permohonan['status'], scope: 'single' | 'series' = 'series') => {
     setUpdating(true);
     setStatusError(null);
     try {
-      await updateStatusPermohonan(permohonan.id, status);
-      onStatusUpdated(permohonan.id, status);
+      await updateStatusPermohonan(currentPermohonan.id, status, scope);
+      setCurrentPermohonan((prev) => ({
+        ...prev,
+        status,
+        recurring_schedules: scope === 'series' && prev.recurring_schedules
+          ? prev.recurring_schedules.map((s) => ({ ...s, status }))
+          : prev.recurring_schedules,
+      }));
+      onStatusUpdated(currentPermohonan.id, status);
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
       const msg = errorObj.response?.data?.message ?? errorObj.message ?? 'Gagal memperbarui status di server database.';
@@ -39,16 +47,59 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
     }
   };
 
+  const handleCancelSingleSession = async (sessionId: string, sessionDate: string, sessionNumber: number) => {
+    const confirmed = window.confirm(
+      `Konfirmasi Pembatalan Jadwal:\nApakah Anda yakin ingin membatalkan jadwal Sesi ${sessionNumber} pada tanggal ${sessionDate}?\n\nJadwal sesi lain dalam rangkaian ini akan tetap aktif.`
+    );
+    if (!confirmed) return;
+
+    setUpdating(true);
+    setStatusError(null);
+    try {
+      await updateStatusPermohonan(sessionId, 'Dibatalkan', 'single');
+      setCurrentPermohonan((prev) => {
+        const updatedSchedules = (prev.recurring_schedules ?? []).map((s) =>
+          (s.id_peminjaman === sessionId || s.id === sessionId) ? { ...s, status: 'Dibatalkan' } : s
+        );
+        const allCancelled = updatedSchedules.length > 0 && updatedSchedules.every((s) => s.status === 'Dibatalkan');
+        return {
+          ...prev,
+          status: allCancelled ? 'Dibatalkan' : prev.status,
+          recurring_schedules: updatedSchedules,
+        };
+      });
+      onStatusUpdated(sessionId, 'Dibatalkan');
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = errorObj.response?.data?.message ?? errorObj.message ?? 'Gagal membatalkan jadwal sesi ini.';
+      setStatusError(msg);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleCancelSeries = async () => {
+    const total = currentPermohonan.total_sessions || currentPermohonan.recurring_schedules?.length || 1;
+    const confirmed = window.confirm(
+      `Konfirmasi Pembatalan Rangkaian:\nApakah Anda yakin ingin membatalkan SELURUH rangkaian peminjaman berulang ini (${total} sesi)?\n\nTindakan ini akan membatalkan semua sesi jadwal dalam rangkaian.`
+    );
+    if (!confirmed) return;
+
+    await handleChangeStatus('Dibatalkan', 'series');
+  };
+
+  const isRecurring = Boolean(currentPermohonan.is_recurring || currentPermohonan.parent_id);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8"
       style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
     >
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-xl sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
           <div>
             <p className="text-xs font-bold text-[#009966] uppercase tracking-wider mb-0.5">Detail Permohonan</p>
-            <h2 className="text-lg font-extrabold text-slate-900">{permohonan.kegiatan}</h2>
+            <h2 className="text-lg font-extrabold text-slate-900">{currentPermohonan.kegiatan}</h2>
           </div>
           <button
             id="modal-close-btn"
@@ -61,7 +112,7 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
           </button>
         </div>
 
-        <DetailTrackingIdBadge id={permohonan.id} />
+        <DetailTrackingIdBadge id={currentPermohonan.id} />
 
         <div className="px-6 py-4 space-y-5">
           {statusError && (
@@ -74,27 +125,27 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full ${cfg.bg} ${cfg.color}`}>
               <StatusIcon className="w-3.5 h-3.5" />
               {cfg.label}
             </span>
 
-            {permohonan.status === 'Menunggu Persetujuan' && (
-              <div className="flex gap-2">
+            {currentPermohonan.status === 'Menunggu Persetujuan' && (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={updating}
-                  onClick={() => handleChangeStatus('Disetujui')}
+                  onClick={() => handleChangeStatus('Disetujui', 'series')}
                   className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer shadow-xs"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Setujui
+                  {isRecurring ? 'Setujui Rangkaian' : 'Setujui'}
                 </button>
                 <button
                   type="button"
                   disabled={updating}
-                  onClick={() => handleChangeStatus('Tidak Disetujui')}
+                  onClick={() => handleChangeStatus('Tidak Disetujui', 'series')}
                   className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 transition cursor-pointer"
                 >
                   <XCircle className="w-3.5 h-3.5" />
@@ -102,30 +153,36 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
                 </button>
               </div>
             )}
-            {(permohonan.status === 'Disetujui' || permohonan.status === 'Tidak Disetujui') && (
-              <button
-                type="button"
-                disabled={updating}
-                onClick={() => handleChangeStatus('Dibatalkan')}
-                className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition cursor-pointer"
-              >
-                <Ban className="w-3.5 h-3.5" />
-                Batalkan
-              </button>
+            {(currentPermohonan.status === 'Disetujui' || currentPermohonan.status === 'Tidak Disetujui') && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={updating}
+                  onClick={() => handleChangeStatus('Dibatalkan', isRecurring ? 'series' : 'single')}
+                  className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition cursor-pointer"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  {isRecurring ? 'Batalkan Seluruh Rangkaian' : 'Batalkan'}
+                </button>
+              </div>
             )}
           </div>
 
-          <DetailBorrowerSection permohonan={permohonan} />
-          <DetailScheduleSection permohonan={permohonan} />
+          <DetailBorrowerSection permohonan={currentPermohonan} />
+          <DetailScheduleSection
+            permohonan={currentPermohonan}
+            onCancelSession={handleCancelSingleSession}
+            onCancelSeries={handleCancelSeries}
+            updating={updating}
+          />
           {(() => {
-            const isExternal = permohonan.applicant_type === 'external' || (permohonan.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
-            const isRoomOnly = (permohonan.jenis === 'ruangan' || (permohonan.kategori_list?.length === 1 && permohonan.kategori_list[0] === 'ruangan')) && !permohonan.items?.some(it => it.kategori && it.kategori !== 'ruangan');
-            const isSuratOptional = !isExternal && isRoomOnly;
+            const isExternal = currentPermohonan.applicant_type === 'external' || (currentPermohonan.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
+            const isSuratOptional = !isExternal;
             return (
               <DetailSuratSection
-                id={permohonan.id}
-                suratUrl={permohonan.surat_url}
-                suratPeminjaman={permohonan.surat_peminjaman}
+                id={currentPermohonan.id}
+                suratUrl={currentPermohonan.surat_url}
+                suratPeminjaman={currentPermohonan.surat_peminjaman}
                 isOptional={isSuratOptional}
               />
             );

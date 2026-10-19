@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ItemJenis;
 use App\Models\ItemPeminjaman;
 use App\Services\BookingService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -29,6 +30,7 @@ class PeminjamanController extends Controller
 
     /**
      * Endpoint pengecekan bentrok jadwal secara remote untuk kalkulasi ketersediaan live.
+     * Mendukung validasi seluruh jadwal pada peminjaman berulang mingguan.
      */
     public function checkConflict(Request $request): JsonResponse
     {
@@ -38,9 +40,68 @@ class PeminjamanController extends Controller
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|integer|exists:item_jenis,id',
             'items.*.jumlah' => 'required|integer|min:1',
+            'is_recurring' => 'nullable|boolean',
+            'recurring_frequency' => 'nullable|string|in:weekly',
+            'recurring_end_date' => 'nullable|date',
         ]);
 
         $aggregated = $this->aggregateItemsPayload($request->input('items'));
+        $isRecurring = $request->boolean('is_recurring');
+        $recurringEndDate = $request->input('recurring_end_date');
+
+        if ($isRecurring && $recurringEndDate) {
+            $schedules = $this->bookingService->generateWeeklySchedules(
+                $request->input('mulai'),
+                $request->input('selesai'),
+                $recurringEndDate
+            );
+
+            if (empty($schedules)) {
+                return response()->json([
+                    'success' => false,
+                    'has_conflict' => true,
+                    'message' => 'Tanggal akhir pengulangan tidak boleh lebih awal dari tanggal mulai.',
+                    'conflicts' => [],
+                ], 422);
+            }
+
+            $allConflicts = [];
+            $conflictingDates = [];
+            foreach ($schedules as $sched) {
+                $conflicts = $this->bookingService->detectConflicts(
+                    $sched['mulai'],
+                    $sched['selesai'],
+                    $aggregated
+                );
+                if (! empty($conflicts)) {
+                    $allConflicts[$sched['date']] = $conflicts;
+                    $conflictingDates[] = $sched['date'];
+                }
+            }
+
+            if (! empty($allConflicts)) {
+                $firstDate = array_key_first($allConflicts);
+                $firstConflicts = $allConflicts[$firstDate];
+                $conflictItemNames = implode(', ', array_unique(array_column($firstConflicts, 'item_nama')));
+                $dateLabel = Carbon::parse($firstDate)->translatedFormat('d F Y');
+
+                return response()->json([
+                    'success' => false,
+                    'has_conflict' => true,
+                    'message' => "Terdapat bentrok jadwal pada tanggal {$dateLabel} untuk {$conflictItemNames}.",
+                    'conflicts' => $firstConflicts,
+                    'conflicting_dates' => $conflictingDates,
+                    'all_conflicts_by_date' => $allConflicts,
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'has_conflict' => false,
+                'message' => 'Semua jadwal peminjaman berulang tersedia.',
+                'schedules_count' => count($schedules),
+            ]);
+        }
 
         $conflicts = $this->bookingService->detectConflicts(
             $request->input('mulai'),
@@ -120,7 +181,8 @@ class PeminjamanController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => $result['message'],
-                    'conflicts' => $result['conflicts'],
+                    'conflicts' => $result['conflicts'] ?? [],
+                    'conflicting_date' => $result['conflicting_date'] ?? null,
                 ], 422);
             }
 
@@ -211,7 +273,7 @@ class PeminjamanController extends Controller
     }
 
     /**
-     * Bentuk Validator untuk method store termasuk validasi jenis pemohon, surat permohonan, dan batas item.
+     * Bentuk Validator untuk method store termasuk validasi jenis pemohon, surat permohonan, batas item, dan pengulangan.
      */
     protected function makeStoreValidator(Request $request): \Illuminate\Contracts\Validation\Validator
     {
@@ -230,6 +292,9 @@ class PeminjamanController extends Controller
             'surat_file' => 'nullable|file|mimes:pdf|max:1024',
             'selected_items' => 'required|array|min:1',
             'nomor_hp' => ($isExternal || $isInternalExplicit) ? 'required|string|max:30' : 'nullable|string|max:30',
+            'is_recurring' => 'nullable|boolean',
+            'recurring_frequency' => 'nullable|string|in:weekly',
+            'recurring_end_date' => 'nullable|date',
         ];
 
         if ($isInternalExplicit) {
@@ -257,6 +322,18 @@ class PeminjamanController extends Controller
             $this->validateSuratFileIntegrity($v, $request);
             $this->validateSelectedItemsStock($v, $request);
             $this->validateApplicantItemLimitsAndSurat($v, $request, $isExternal);
+
+            if ($request->boolean('is_recurring')) {
+                if (! $request->filled('recurring_end_date')) {
+                    $v->errors()->add('recurring_end_date', 'Tanggal akhir pengulangan wajib diisi jika peminjaman berulang diaktifkan.');
+                } else {
+                    $tglMulai = substr((string) $request->input('mulai'), 0, 10);
+                    $endDate = (string) $request->input('recurring_end_date');
+                    if ($endDate < $tglMulai) {
+                        $v->errors()->add('recurring_end_date', 'Tanggal akhir pengulangan tidak boleh lebih awal dari tanggal mulai peminjaman.');
+                    }
+                }
+            }
         });
 
         return $validator;
@@ -298,49 +375,50 @@ class PeminjamanController extends Controller
 
             if ((int) $itemModel->id_jenis === 1) {
                 $roomCount += $jumlah;
+
+                if ($isExternal) {
+                    $nameLower = strtolower($itemModel->nama);
+                    $regId = $itemModel->registration_id ?? '';
+                    $isAula3 = str_contains($nameLower, 'aula lantai 3') ||
+                               str_contains($nameLower, 'sasana budhaya') ||
+                               $regId === 'RNG-AULA-02' ||
+                               ((int) $itemModel->id === 2 && str_contains($nameLower, 'aula'));
+
+                    if (! $isAula3) {
+                        $validator->errors()->add('selected_items', 'Pemohon eksternal hanya dapat mengajukan peminjaman Aula Lantai 3.');
+                    }
+                }
             } elseif ((int) $itemModel->id_jenis === 2) {
                 $vehicleCount += $jumlah;
+
+                if ($isExternal) {
+                    $validator->errors()->add('selected_items', 'Pemohon eksternal tidak diperbolehkan meminjam kendaraan dinas.');
+                }
             } else {
                 $equipmentCount += $jumlah;
+
+                if ($isExternal) {
+                    $validator->errors()->add('selected_items', 'Pemohon eksternal tidak diperbolehkan meminjam peralatan atau perlengkapan dinas.');
+                }
             }
         }
 
-        // 1. Batasan item berdasarkan jenis pemohon:
-        // Eksternal: maksimal 1 ruangan dan maksimal 1 kendaraan
-        if ($isExternal) {
-            if ($roomCount > 1) {
-                $validator->errors()->add('selected_items', 'Pemohon eksternal hanya diperbolehkan memilih maksimal 1 ruangan dalam satu pengajuan.');
-            }
-            if ($vehicleCount > 1) {
-                $validator->errors()->add('selected_items', 'Pemohon eksternal hanya diperbolehkan memilih maksimal 1 kendaraan dalam satu pengajuan.');
-            }
+        // 1. Batasan kuantitas untuk pemohon eksternal:
+        if ($isExternal && $roomCount > 1) {
+            $validator->errors()->add('selected_items', 'Pemohon eksternal hanya diperbolehkan memilih maksimal 1 unit Aula Lantai 3.');
         }
 
         // 2. Validasi kewajiban upload surat permohonan:
-        // Internal + Ruangan saja => Tidak wajib surat
-        // Internal + Kendaraan => Wajib surat
-        // Internal + Barang/peralatan => Wajib surat
-        // Internal + Kombinasi (jika salah satu kategori mewajibkan) => Wajib surat
-        // Eksternal (seluruh kategori) => Wajib surat
-        $suratRequired = false;
-        if ($isExternal) {
-            $suratRequired = true;
-        } else {
-            if ($vehicleCount > 0 || $equipmentCount > 0) {
-                $suratRequired = true;
-            }
-        }
+        // Internal: Surat TIDAK WAJIB untuk semua kategori (ruangan, kendaraan, maupun peralatan).
+        // Eksternal: Surat WAJIB.
+        $suratRequired = $isExternal;
 
         if ($suratRequired) {
             $hasUploadedFile = $request->hasFile('surat_file') && $request->file('surat_file')->isValid();
             $hasExistingSurat = $request->filled('surat_url') || $request->filled('surat_peminjaman');
 
             if (! $hasUploadedFile && ! $hasExistingSurat) {
-                if ($isExternal) {
-                    $validator->errors()->add('surat_file', 'Pemohon eksternal wajib mengunggah surat permohonan peminjaman resmi (format PDF, maks. 1 MB).');
-                } else {
-                    $validator->errors()->add('surat_file', 'Pengajuan peminjaman kendaraan atau barang/peralatan wajib melampirkan surat permohonan resmi (format PDF, maks. 1 MB).');
-                }
+                $validator->errors()->add('surat_file', 'Pemohon eksternal wajib mengunggah surat permohonan peminjaman resmi (format PDF, maks. 1 MB).');
             }
         }
     }

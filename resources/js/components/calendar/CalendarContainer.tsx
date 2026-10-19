@@ -10,7 +10,7 @@ interface CalendarContainerProps {
 }
 
 export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) => {
-  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 9, 1));
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'calendar' | 'agenda'>('calendar');
   const [selectedEvent, setSelectedEvent] = useState<MasterPeminjaman | null>(null);
 
@@ -37,7 +37,7 @@ export const CalendarContainer: React.FC<CalendarContainerProps> = ({ events }) 
       <CalendarToolbar
         currentDate={currentDate}
         viewMode={viewMode}
-        onToday={() => setCurrentDate(new Date(2026, 9, 1))}
+        onToday={() => setCurrentDate(new Date())}
         onPrevMonth={handlePrevMonth}
         onNextMonth={handleNextMonth}
         onViewModeChange={setViewMode}

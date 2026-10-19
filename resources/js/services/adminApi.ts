@@ -138,12 +138,16 @@ export async function getPermohonan(): Promise<Permohonan[]> {
 export async function updateStatusPermohonan(
   id: string,
   status: Permohonan['status'],
+  scope: 'single' | 'series' = 'series',
+  alasan?: string,
 ): Promise<void> {
   const res = await axios.patch(
     `/api/peminjaman/${encodeURIComponent(id)}/status`,
     {
       status,
-      petugas: 'Admin SiRuang',
+      petugas: 'Admin SIMPRU',
+      scope,
+      alasan,
     },
     {
       headers: getAuthHeaders(),

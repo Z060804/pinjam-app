@@ -65,6 +65,34 @@ export interface Permohonan {
   is_multi_item?: boolean;
   item_dipinjam: string; // nama item
   items?: PermohonanItemDetail[];
+  parent_id?: string | null;
+  parent_registration_id?: string | null;
+  is_recurring?: boolean;
+  session_number?: number | null;
+  total_sessions?: number | null;
+  active_sessions_count?: number | null;
+  cancelled_sessions_count?: number | null;
+  status_summary?: string | null;
+  session_label?: string | null;
+  next_session_date?: string | null;
+  recurring_frequency?: string | null;
+  recurring_end_date?: string | null;
+  recurring_schedules?: Array<{
+    index: number;
+    session_number?: number;
+    total_sessions?: number;
+    id?: string;
+    id_peminjaman: string;
+    parent_id?: string | null;
+    tgl_mulai: string;
+    waktu_mulai: string;
+    waktu_selesai: string;
+    mulai: string;
+    selesai: string;
+    status: string;
+    is_parent: boolean;
+    can_cancel?: boolean;
+  }>;
 }
 
 export type AdminActiveTab = 'rekap' | 'ruangan' | 'kendaraan' | 'perlengkapan';

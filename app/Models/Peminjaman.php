@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Peminjaman extends Model
@@ -41,6 +42,10 @@ class Peminjaman extends Model
         'surat_url',
         'surat_peminjaman',
         'status',
+        'is_recurring',
+        'recurring_frequency',
+        'recurring_end_date',
+        'parent_id',
         'petugas',
         'catatan_admin',
     ];
@@ -50,6 +55,8 @@ class Peminjaman extends Model
         'tgl_mulai' => 'date:Y-m-d',
         'tgl_selesai' => 'date:Y-m-d',
         'jumlah_peserta' => 'integer',
+        'is_recurring' => 'boolean',
+        'recurring_end_date' => 'date:Y-m-d',
     ];
 
     protected static function booted()
@@ -280,5 +287,15 @@ class Peminjaman extends Model
     public function itemPeminjaman(): HasMany
     {
         return $this->hasMany(ItemPeminjaman::class, 'id_peminjaman', 'id_peminjaman');
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(Peminjaman::class, 'parent_id', 'id_peminjaman');
+    }
+
+    public function recurringSchedules(): HasMany
+    {
+        return $this->hasMany(Peminjaman::class, 'parent_id', 'id_peminjaman')->orderBy('tgl_mulai', 'asc');
     }
 }

@@ -48,8 +48,8 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8"
       style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
     >
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#009966] flex items-center justify-center font-bold">
               {isEditing ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -74,7 +74,7 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="p-6 space-y-4">
+        <form onSubmit={onSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {fields.map((field) => (
             <div key={field.name}>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -123,7 +123,7 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 shrink-0">
             <button
               type="button"
               onClick={onClose}

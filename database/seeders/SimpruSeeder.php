@@ -3,13 +3,15 @@
 namespace Database\Seeders;
 
 use App\Models\ItemJenis;
+use App\Models\ItemPeminjaman;
 use App\Models\MasterJenis;
 use App\Models\Peminjaman;
 use App\Models\PeminjamanItem;
-use App\Models\ItemPeminjaman;
 use App\Models\User;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class SimpruSeeder extends Seeder
 {
@@ -23,9 +25,9 @@ class SimpruSeeder extends Seeder
         $adminPassword = env('ADMIN_DEFAULT_PASSWORD', env('ADMIN_PASSWORD'));
 
         $existingAdmin = User::where('email', $adminEmail)->first();
-        if (!$existingAdmin) {
+        if (! $existingAdmin) {
             $isDev = app()->isLocal() || app()->runningUnitTests();
-            $initialPassword = $adminPassword ?: ($isDev ? 'admin123' : \Illuminate\Support\Str::random(16));
+            $initialPassword = $adminPassword ?: ($isDev ? 'admin123' : Str::random(16));
             User::create([
                 'name' => env('ADMIN_DEFAULT_NAME', 'Administrator Kemenag'),
                 'email' => $adminEmail,
@@ -33,9 +35,9 @@ class SimpruSeeder extends Seeder
             ]);
 
             if ($this->command) {
-                if (!$adminPassword && !$isDev) {
+                if (! $adminPassword && ! $isDev) {
                     $this->command->warn("Akun admin baru dibuat dengan password acak: {$initialPassword}");
-                    $this->command->warn("PENTING: Simpan password ini atau setel ADMIN_PASSWORD di file .env sebelum menjalankan seeder.");
+                    $this->command->warn('PENTING: Simpan password ini atau setel ADMIN_PASSWORD di file .env sebelum menjalankan seeder.');
                 } else {
                     $this->command->info("Akun admin berhasil dibuat ({$adminEmail}).");
                 }
@@ -217,7 +219,7 @@ class SimpruSeeder extends Seeder
                 'surat_url' => 'surat_penma_001.pdf',
                 'surat_peminjaman' => 'surat_penma_001.pdf',
                 'status' => 'Disetujui',
-                'petugas' => 'Admin SiRuang',
+                'petugas' => 'Admin SIMPRU',
                 'items' => [
                     ['item_id' => 1, 'jumlah' => 1],
                     ['item_id' => 9, 'jumlah' => 1],
@@ -246,7 +248,7 @@ class SimpruSeeder extends Seeder
                 'surat_url' => 'surat_bimas_014.pdf',
                 'surat_peminjaman' => 'surat_bimas_014.pdf',
                 'status' => 'Disetujui',
-                'petugas' => 'Admin SiRuang',
+                'petugas' => 'Admin SIMPRU',
                 'items' => [
                     ['item_id' => 6, 'jumlah' => 1],
                 ],
@@ -274,7 +276,7 @@ class SimpruSeeder extends Seeder
                 'surat_url' => 'surat_zawa_009.pdf',
                 'surat_peminjaman' => 'surat_zawa_009.pdf',
                 'status' => 'Disetujui',
-                'petugas' => 'Admin SiRuang',
+                'petugas' => 'Admin SIMPRU',
                 'items' => [
                     ['item_id' => 2, 'jumlah' => 1],
                     ['item_id' => 8, 'jumlah' => 2],
@@ -332,7 +334,7 @@ class SimpruSeeder extends Seeder
                 'surat_url' => 'surat_pais_021.pdf',
                 'surat_peminjaman' => 'surat_pais_021.pdf',
                 'status' => 'Disetujui',
-                'petugas' => 'Admin SiRuang',
+                'petugas' => 'Admin SIMPRU',
                 'items' => [
                     ['item_id' => 4, 'jumlah' => 1],
                     ['item_id' => 10, 'jumlah' => 1],
@@ -352,7 +354,7 @@ class SimpruSeeder extends Seeder
                 $peminjaman = Peminjaman::create($loanData);
             }
 
-            if (\Illuminate\Support\Facades\Schema::hasTable('peminjaman_items')) {
+            if (Schema::hasTable('peminjaman_items')) {
                 PeminjamanItem::where('peminjaman_id', $peminjaman->id)->delete();
                 foreach ($itemsData as $it) {
                     PeminjamanItem::create([
@@ -363,7 +365,7 @@ class SimpruSeeder extends Seeder
                 }
             }
 
-            if (\Illuminate\Support\Facades\Schema::hasTable('item_peminjaman')) {
+            if (Schema::hasTable('item_peminjaman')) {
                 ItemPeminjaman::where('id_peminjaman', $peminjaman->id_peminjaman)->delete();
                 foreach ($itemsData as $it) {
                     ItemPeminjaman::create([

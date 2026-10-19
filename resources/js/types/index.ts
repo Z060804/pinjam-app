@@ -45,6 +45,31 @@ export interface MasterPeminjaman {
   item_dipinjam?: string;
   ruangan?: string;
   jenis?: 'ruangan' | 'kendaraan' | 'perlengkapan' | string;
+  parent_id?: string | null;
+  parent_registration_id?: string | null;
+  is_recurring?: boolean;
+  session_number?: number | null;
+  total_sessions?: number | null;
+  session_label?: string | null;
+  next_session_date?: string | null;
+  recurring_frequency?: string | null;
+  recurring_end_date?: string | null;
+  recurring_schedules?: Array<{
+    index: number;
+    session_number?: number;
+    total_sessions?: number;
+    id?: string;
+    id_peminjaman: string;
+    parent_id?: string | null;
+    tgl_mulai: string;
+    waktu_mulai: string;
+    waktu_selesai: string;
+    mulai: string;
+    selesai: string;
+    status: string;
+    is_parent: boolean;
+    can_cancel?: boolean;
+  }>;
 }
 
 export interface ItemPeminjaman {
@@ -71,6 +96,9 @@ export interface FormPeminjamanState {
   keperluan: string;
   surat_peminjaman_name: string;
   selected_items: CartItem[];
+  is_recurring?: boolean;
+  recurring_frequency?: 'weekly' | string;
+  recurring_end_date?: string;
 }
 
 export interface PeminjamanDetailItem extends ItemPeminjaman {

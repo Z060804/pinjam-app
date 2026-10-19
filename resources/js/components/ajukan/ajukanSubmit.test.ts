@@ -39,8 +39,8 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
       selected_items: [],
     };
 
-    const id = await submitPeminjaman(form, null);
-    expect(id).toBe('PMJ-202610-099');
+    const res = await submitPeminjaman(form, null);
+    expect(res.id_peminjaman).toBe('PMJ-202610-099');
     expect(axios.post).toHaveBeenCalledWith(
       '/api/peminjaman',
       expect.objectContaining({
@@ -66,21 +66,66 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
       unit_kerja: 'MTs Negeri 1',
       nomor_hp: '08123456789',
       mulai: '2026-10-15T08:00',
-      selesai: '2026-10-15T16:00',
+      selesai: '2026-10-15 16:00',
       keperluan: 'Lomba Sains',
       surat_peminjaman_name: 'surat.pdf',
       selected_items: [],
     };
 
     const fakeFile = new File(['content'], 'surat_dinas.pdf', { type: 'application/pdf' });
-    const id = await submitPeminjaman(form, fakeFile);
+    const res = await submitPeminjaman(form, fakeFile);
 
-    expect(id).toBe('PMJ-202610-100');
+    expect(res.id_peminjaman).toBe('PMJ-202610-100');
     expect(axios.post).toHaveBeenCalledWith(
       '/api/peminjaman',
       expect.any(FormData),
       expect.objectContaining({
         headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    );
+  });
+
+  it('submits recurring parameters when is_recurring is true', async () => {
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          id_peminjaman: 'PMJ-202610-101',
+          is_recurring: true,
+          recurring_frequency: 'weekly',
+          recurring_end_date: '2026-11-23',
+          recurring_schedules: [{ mulai: '2026-10-19 08:00:00' }, { mulai: '2026-10-26 08:00:00' }],
+        },
+      },
+    });
+
+    const form: FormPeminjamanState = {
+      applicant_type: 'internal',
+      pihak_pemohon: 'Internal Kemenag Sleman',
+      nip: '198501012010011001',
+      nama_peminjam: 'Ahmad Subarkah',
+      unit_kerja: 'Bimas Islam',
+      nomor_hp: '08123456789',
+      mulai: '2026-10-19T08:00',
+      selesai: '2026-10-19T12:00',
+      keperluan: 'Kegiatan Berulang',
+      surat_peminjaman_name: '',
+      selected_items: [],
+      is_recurring: true,
+      recurring_frequency: 'weekly',
+      recurring_end_date: '2026-11-23',
+    };
+
+    const res = await submitPeminjaman(form, null);
+    expect(res.id_peminjaman).toBe('PMJ-202610-101');
+    expect(res.is_recurring).toBe(true);
+    expect(res.recurring_schedules).toHaveLength(2);
+    expect(axios.post).toHaveBeenCalledWith(
+      '/api/peminjaman',
+      expect.objectContaining({
+        is_recurring: true,
+        recurring_frequency: 'weekly',
+        recurring_end_date: '2026-11-23',
       })
     );
   });

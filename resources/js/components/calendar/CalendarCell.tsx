@@ -94,7 +94,14 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
               title={`${title} - ${kegiatan} (${peminjam})`}
             >
               <div className="flex items-center justify-between gap-1">
-                <span className="font-bold truncate">{title}</span>
+                <span className="font-bold truncate flex items-center gap-1">
+                  {ev.is_recurring && (
+                    <span className="inline-block text-[8px] font-extrabold px-1 rounded bg-blue-100 text-blue-800 shrink-0">
+                      Berulang
+                    </span>
+                  )}
+                  <span className="truncate">{title}</span>
+                </span>
                 {rangeInd && (
                   <span className="text-[9px] font-extrabold px-1 rounded bg-black/10 shrink-0">
                     {rangeInd}

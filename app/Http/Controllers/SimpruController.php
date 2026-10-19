@@ -165,6 +165,10 @@ class SimpruController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $seriesGroups = $records->groupBy(function ($item) {
+            return $item->parent_id ?: ($item->id_peminjaman ?? $item->id);
+        });
+
         $maskName = function (?string $name): string {
             if (! $name || $name === '-') {
                 return '-';
@@ -182,7 +186,7 @@ class SimpruController extends Controller
             return implode(' ', $maskedWords);
         };
 
-        $formatted = $records->map(function ($p) use ($isAdmin, $maskName) {
+        $formatted = $records->map(function ($p) use ($isAdmin, $maskName, $seriesGroups) {
             $itemList = $this->bookingService->consolidateItems($p);
             $categoryMeta = $this->bookingService->resolveCategoryMetadata($itemList);
 
@@ -207,6 +211,18 @@ class SimpruController extends Controller
             $pihak = $p->pihak_pemohon ?: 'Internal Kemenag Sleman';
             $isExternal = str_contains(strtolower($pihak), 'eksternal') || str_contains(strtolower($pihak), 'external');
             $applicantType = $isExternal ? 'external' : 'internal';
+
+            $rootKey = $p->parent_id ?: ($p->id_peminjaman ?? $p->id);
+            $group = $seriesGroups->get($rootKey, collect([$p]));
+            $isSeries = (bool) $p->is_recurring || ! empty($p->parent_id) || $group->count() > 1;
+            $sortedGroup = $group->sortBy('tgl_mulai')->values();
+            $currId = $p->id_peminjaman ?? $p->id;
+            $sessionIdx = $sortedGroup->search(fn ($it) => ($it->id_peminjaman ?? $it->id) === $currId);
+            $sessionNumber = $sessionIdx !== false ? $sessionIdx + 1 : 1;
+            $totalSessions = $sortedGroup->count();
+            $nextSession = $sortedGroup->first(function ($it) use ($p) {
+                return $it->tgl_mulai > $p->tgl_mulai && $it->status !== 'Dibatalkan';
+            });
 
             return [
                 'id' => $p->id_peminjaman ?? $p->id,
@@ -234,6 +250,15 @@ class SimpruController extends Controller
                 'status' => $p->status,
                 'surat_url' => $isAdmin ? ($p->surat_url ?? $p->surat_peminjaman) : null,
                 'surat_peminjaman' => $isAdmin ? ($p->surat_peminjaman ?? $p->surat_url) : null,
+                'parent_id' => $p->parent_id,
+                'parent_registration_id' => $rootKey,
+                'is_recurring' => $isSeries,
+                'session_number' => $isSeries ? $sessionNumber : null,
+                'total_sessions' => $isSeries ? $totalSessions : null,
+                'session_label' => $isSeries ? "Sesi {$sessionNumber} dari {$totalSessions}" : null,
+                'next_session_date' => $nextSession ? Carbon::parse($nextSession->tgl_mulai)->format('Y-m-d') : null,
+                'recurring_frequency' => $p->recurring_frequency,
+                'recurring_end_date' => $p->recurring_end_date ? Carbon::parse($p->recurring_end_date)->format('Y-m-d') : null,
                 'jenis' => $jenisName,
                 'kategori_list' => $kategoriList,
                 'is_multi_item' => $isMulti,
@@ -316,6 +341,58 @@ class SimpruController extends Controller
 
         $hasRealSurat = ! empty($peminjaman->surat_url) || ! empty($peminjaman->surat_peminjaman);
 
+        $recurringSchedules = [];
+        $parentObj = $peminjaman->parent_id
+            ? (Peminjaman::where('id_peminjaman', $peminjaman->parent_id)->orWhere('id', $peminjaman->parent_id)->first() ?: $peminjaman)
+            : $peminjaman;
+        $isRecurringSeries = false;
+        $sessionNumber = 1;
+        $totalSessions = 1;
+        $nextSessionDate = null;
+
+        if ($parentObj) {
+            $allInSeries = Peminjaman::where('id_peminjaman', $parentObj->id_peminjaman)
+                ->orWhere('id', $parentObj->id_peminjaman)
+                ->orWhere('parent_id', $parentObj->id_peminjaman)
+                ->orderBy('tgl_mulai', 'asc')
+                ->get();
+
+            if ($allInSeries->count() > 1 || (bool) $parentObj->is_recurring || ! empty($peminjaman->parent_id)) {
+                $isRecurringSeries = true;
+                $totalSessions = $allInSeries->count();
+                $currId = $peminjaman->id_peminjaman ?? $peminjaman->id;
+                $sIdx = $allInSeries->search(fn ($s) => ($s->id_peminjaman ?? $s->id) === $currId);
+                $sessionNumber = $sIdx !== false ? $sIdx + 1 : 1;
+                $nextS = $allInSeries->first(function ($s) use ($peminjaman) {
+                    return $s->tgl_mulai > $peminjaman->tgl_mulai && $s->status !== 'Dibatalkan';
+                });
+                $nextSessionDate = $nextS ? Carbon::parse($nextS->tgl_mulai)->format('Y-m-d') : null;
+
+                $recurringSchedules = $allInSeries->map(function ($s, $idx) use ($parentObj, $totalSessions) {
+                    $sMulaiStr = $s->tgl_mulai ? Carbon::parse($s->tgl_mulai)->format('Y-m-d') : substr((string) $s->mulai, 0, 10);
+                    $sWaktuMulai = $s->waktu_mulai ?: (strlen((string) $s->mulai) >= 16 ? substr((string) $s->mulai, 11, 5) : '08:00');
+                    $sWaktuSelesai = $s->waktu_selesai ?: (strlen((string) $s->selesai) >= 16 ? substr((string) $s->selesai, 11, 5) : '16:00');
+
+                    return [
+                        'index' => $idx + 1,
+                        'session_number' => $idx + 1,
+                        'total_sessions' => $totalSessions,
+                        'id' => $s->id_peminjaman ?? $s->id,
+                        'id_peminjaman' => $s->id_peminjaman ?? $s->id,
+                        'parent_id' => $s->parent_id,
+                        'tgl_mulai' => $sMulaiStr,
+                        'waktu_mulai' => $sWaktuMulai,
+                        'waktu_selesai' => $sWaktuSelesai,
+                        'mulai' => $s->mulai ?: ($sMulaiStr.' '.$sWaktuMulai),
+                        'selesai' => $s->selesai ?: ($sMulaiStr.' '.$sWaktuSelesai),
+                        'status' => $s->status,
+                        'is_parent' => ($s->id_peminjaman === $parentObj->id_peminjaman || $s->id === $parentObj->id),
+                        'can_cancel' => $s->status !== 'Dibatalkan',
+                    ];
+                })->values()->all();
+            }
+        }
+
         $result = [
             'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
             'id' => $peminjaman->id_peminjaman ?? $peminjaman->id,
@@ -348,6 +425,16 @@ class SimpruController extends Controller
             'is_multi_item' => $isMulti,
             'item_dipinjam' => $itemNames ?: 'Sarana Prasarana',
             'ruangan' => $itemNames ?: 'Sarana Prasarana',
+            'parent_id' => $peminjaman->parent_id,
+            'parent_registration_id' => $parentObj?->id_peminjaman ?? ($parentObj?->id ?? $peminjaman->id_peminjaman),
+            'is_recurring' => $isRecurringSeries,
+            'session_number' => $isRecurringSeries ? $sessionNumber : null,
+            'total_sessions' => $isRecurringSeries ? $totalSessions : null,
+            'session_label' => $isRecurringSeries ? "Sesi {$sessionNumber} dari {$totalSessions}" : null,
+            'next_session_date' => $nextSessionDate,
+            'recurring_frequency' => $peminjaman->recurring_frequency,
+            'recurring_end_date' => $peminjaman->recurring_end_date ? Carbon::parse($peminjaman->recurring_end_date)->format('Y-m-d') : null,
+            'recurring_schedules' => $recurringSchedules,
             'items' => $itemList->map(fn ($it) => [
                 'id' => $it->id,
                 'id_peminjaman' => $peminjaman->id_peminjaman ?? $peminjaman->id,
@@ -500,16 +587,20 @@ class SimpruController extends Controller
     }
 
     /**
-     * Admin: Update loan approval status.
+     * Admin: Update loan approval status with support for single session or whole series scope.
      */
     public function updateStatus(Request $request, string $id): JsonResponse
     {
         $validated = $request->validate([
             'status' => 'required|in:Menunggu Persetujuan,Disetujui,Tidak Disetujui,Dibatalkan',
             'petugas' => 'nullable|string|max:100',
+            'scope' => 'nullable|in:single,series',
+            'alasan' => 'nullable|string|max:255',
         ]);
 
-        return DB::transaction(function () use ($validated, $id) {
+        $scope = $validated['scope'] ?? ($validated['status'] === 'Dibatalkan' ? 'single' : 'series');
+
+        return DB::transaction(function () use ($validated, $id, $scope, $request) {
             $peminjaman = Peminjaman::where('id', $id)
                 ->orWhere('id_peminjaman', $id)
                 ->lockForUpdate()
@@ -519,9 +610,71 @@ class SimpruController extends Controller
                 return response()->json(['success' => false, 'message' => 'Peminjaman tidak ditemukan'], 404);
             }
 
-            // Jika status Disetujui, delegasikan ke BookingService untuk pencegahan double-booking & row-lock
-            if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
-                $result = $this->bookingService->approvePeminjaman($peminjaman, $validated['petugas'] ?? null);
+            // Identifikasi root parent jika permohonan merupakan bagian dari rangkaian berulang
+            $rootParent = $peminjaman->parent_id
+                ? (Peminjaman::where('id_peminjaman', $peminjaman->parent_id)->orWhere('id', $peminjaman->parent_id)->first() ?: $peminjaman)
+                : $peminjaman;
+
+            $petugasName = $validated['petugas'] ?? ($request->user()?->name ?? 'Admin SIMPRU');
+
+            // KASUS 1: Perubahan status khusus SATU SESI (scope === 'single')
+            if ($scope === 'single') {
+                if ($validated['status'] === 'Disetujui' && $peminjaman->status !== 'Disetujui') {
+                    $itemList = $this->bookingService->consolidateItems($peminjaman);
+                    $itemIds = $itemList->pluck('item_id')->map(fn ($itId) => (int) $itId)->filter(fn ($itId) => $itId > 0)->unique()->values()->all();
+                    $this->bookingService->lockItemsForUpdate($itemIds);
+
+                    $mulaiStr = $peminjaman->mulai ?: ($peminjaman->tgl_mulai.' '.($peminjaman->waktu_mulai ?: '08:00'));
+                    $selesaiStr = $peminjaman->selesai ?: ($peminjaman->tgl_selesai.' '.($peminjaman->waktu_selesai ?: '16:00'));
+                    $itemsPayload = $itemList->map(fn ($it) => [
+                        'item_id' => (int) $it->item_id,
+                        'jumlah' => (int) $it->jumlah,
+                    ])->all();
+
+                    $conflicts = $this->bookingService->detectConflicts($mulaiStr, $selesaiStr, $itemsPayload, $peminjaman->id_peminjaman ?? $peminjaman->id);
+                    if (! empty($conflicts)) {
+                        $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+                        $dateLabel = Carbon::parse($peminjaman->tgl_mulai)->translatedFormat('d F Y');
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Jadwal bentrok pada {$dateLabel}: {$conflictItemNames} sudah disetujui pada waktu yang sama.",
+                            'conflicts' => $conflicts,
+                        ], 422);
+                    }
+                }
+
+                $peminjaman->status = $validated['status'];
+                $peminjaman->petugas = $petugasName;
+                if (! empty($validated['alasan'])) {
+                    $peminjaman->catatan_admin = $validated['alasan'];
+                }
+                $peminjaman->save();
+
+                // Periksa apakah seluruh sesi dalam rangkaian sekarang dibatalkan
+                if ($rootParent->is_recurring || $rootParent->recurringSchedules()->exists()) {
+                    $allSessions = Peminjaman::where('id_peminjaman', $rootParent->id_peminjaman)
+                        ->orWhere('id', $rootParent->id_peminjaman)
+                        ->orWhere('parent_id', $rootParent->id_peminjaman)
+                        ->get();
+                    $allCancelled = $allSessions->every(fn ($s) => $s->status === 'Dibatalkan');
+                    if ($allCancelled && $rootParent->status !== 'Dibatalkan') {
+                        $rootParent->status = 'Dibatalkan';
+                        $rootParent->petugas = $petugasName;
+                        $rootParent->save();
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Status jadwal sesi ini berhasil diperbarui',
+                    'data' => $peminjaman,
+                ]);
+            }
+
+            // KASUS 2: Perubahan status SELURUH RANGKAIAN (scope === 'series')
+            if ($validated['status'] === 'Disetujui' && $rootParent->status !== 'Disetujui') {
+                $result = $this->bookingService->approvePeminjaman($rootParent, $petugasName);
                 if (! $result['success']) {
                     return response()->json([
                         'success' => false,
@@ -530,16 +683,28 @@ class SimpruController extends Controller
                     ], 422);
                 }
             } else {
-                $peminjaman->status = $validated['status'];
-                if (isset($validated['petugas'])) {
-                    $peminjaman->petugas = $validated['petugas'];
+                $rootParent->status = $validated['status'];
+                $rootParent->petugas = $petugasName;
+                if (! empty($validated['alasan'])) {
+                    $rootParent->catatan_admin = $validated['alasan'];
                 }
-                $peminjaman->save();
+                $rootParent->save();
+
+                if ($rootParent->is_recurring && $rootParent->recurringSchedules()->exists()) {
+                    foreach ($rootParent->recurringSchedules as $child) {
+                        $child->status = $validated['status'];
+                        $child->petugas = $petugasName;
+                        if (! empty($validated['alasan'])) {
+                            $child->catatan_admin = $validated['alasan'];
+                        }
+                        $child->save();
+                    }
+                }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Status peminjaman berhasil diperbarui',
+                'message' => 'Status rangkaian peminjaman berhasil diperbarui',
                 'data' => $peminjaman,
             ]);
         });

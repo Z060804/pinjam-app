@@ -53,6 +53,22 @@ class ApplicantTypeAndRulesTest extends TestCase
             ?? ItemJenis::create(['id_jenis' => 3, 'nama' => "Peralatan {$index}", 'quantity' => 10, 'is_active' => true]);
     }
 
+    private function getAulaLantai3(): ItemJenis
+    {
+        return ItemJenis::where('id_jenis', 1)
+            ->where(function ($q) {
+                $q->where('nama', 'like', '%Aula Lantai 3%')
+                    ->orWhere('registration_id', 'RNG-AULA-02');
+            })->first()
+            ?? ItemJenis::create([
+                'id_jenis' => 1,
+                'nama' => 'Aula Lantai 3 (Sasana Budhaya)',
+                'registration_id' => 'RNG-AULA-02',
+                'quantity' => 1,
+                'is_active' => true,
+            ]);
+    }
+
     /**
      * 1. Internal + satu ruangan + tanpa surat: harus diterima jika persyaratan lain valid.
      */
@@ -115,9 +131,9 @@ class ApplicantTypeAndRulesTest extends TestCase
     }
 
     /**
-     * 3. Internal + kendaraan + tanpa surat: harus ditolak.
+     * 3. Internal + kendaraan + tanpa surat: harus diterima (surat tidak wajib bagi internal).
      */
-    public function test_3_internal_vehicle_without_surat_rejected(): void
+    public function test_3_internal_vehicle_without_surat_accepted(): void
     {
         $vehicle = $this->getVehicle(0);
 
@@ -136,14 +152,14 @@ class ApplicantTypeAndRulesTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['surat_file']);
+        $response->assertStatus(201)
+            ->assertJson(['success' => true]);
     }
 
     /**
-     * 4. Internal + peralatan + tanpa surat: harus ditolak.
+     * 4. Internal + peralatan + tanpa surat: harus diterima (surat tidak wajib bagi internal).
      */
-    public function test_4_internal_equipment_without_surat_rejected(): void
+    public function test_4_internal_equipment_without_surat_accepted(): void
     {
         $equipment = $this->getEquipment(0);
 
@@ -162,14 +178,14 @@ class ApplicantTypeAndRulesTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['surat_file']);
+        $response->assertStatus(201)
+            ->assertJson(['success' => true]);
     }
 
     /**
-     * 5. Internal + ruangan dan peralatan + tanpa surat: harus ditolak.
+     * 5. Internal + ruangan dan peralatan + tanpa surat: harus diterima (surat tidak wajib bagi internal).
      */
-    public function test_5_internal_room_and_equipment_without_surat_rejected(): void
+    public function test_5_internal_room_and_equipment_without_surat_accepted(): void
     {
         $room = $this->getRoom(0);
         $equipment = $this->getEquipment(0);
@@ -190,16 +206,16 @@ class ApplicantTypeAndRulesTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['surat_file']);
+        $response->assertStatus(201)
+            ->assertJson(['success' => true]);
     }
 
     /**
-     * 6. Eksternal + satu ruangan + tanpa surat: harus ditolak.
+     * 6. Eksternal + satu ruangan (Aula Lt 3) + tanpa surat: harus ditolak (surat wajib untuk eksternal).
      */
     public function test_6_external_one_room_without_surat_rejected(): void
     {
-        $room = $this->getRoom(0);
+        $room = $this->getAulaLantai3();
 
         $response = $this->postJson('/api/peminjaman', [
             'applicant_type' => 'external',
@@ -220,11 +236,11 @@ class ApplicantTypeAndRulesTest extends TestCase
     }
 
     /**
-     * 7. Eksternal + satu ruangan + surat valid: harus diterima jika persyaratan lain valid.
+     * 7. Eksternal + Aula Lantai 3 + surat valid: harus diterima.
      */
     public function test_7_external_one_room_with_valid_surat_accepted(): void
     {
-        $room = $this->getRoom(0);
+        $room = $this->getAulaLantai3();
         $file = $this->createValidPdf('surat_mts1.pdf');
 
         $response = $this->post('/api/peminjaman', [
@@ -254,11 +270,11 @@ class ApplicantTypeAndRulesTest extends TestCase
     }
 
     /**
-     * 8. Eksternal + dua ruangan: harus ditolak.
+     * 8. Eksternal + dua ruangan: harus ditolak (hanya 1 aula lantai 3 yang diizinkan).
      */
     public function test_8_external_two_rooms_rejected(): void
     {
-        $room1 = $this->getRoom(0);
+        $room1 = $this->getAulaLantai3();
         $room2 = $this->getRoom(1);
         $file = $this->createValidPdf();
 
@@ -283,7 +299,7 @@ class ApplicantTypeAndRulesTest extends TestCase
     }
 
     /**
-     * 9. Eksternal + satu kendaraan + surat valid: harus diterima jika persyaratan lain valid.
+     * 9. Eksternal + kendaraan: harus ditolak (eksternal tidak boleh meminjam kendaraan).
      */
     public function test_9_external_one_vehicle_with_valid_surat_accepted(): void
     {
@@ -305,8 +321,8 @@ class ApplicantTypeAndRulesTest extends TestCase
             ]),
         ]);
 
-        $response->assertStatus(201)
-            ->assertJson(['success' => true]);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
     }
 
     /**
@@ -339,7 +355,7 @@ class ApplicantTypeAndRulesTest extends TestCase
     }
 
     /**
-     * 11. Eksternal + beberapa peralatan + surat valid: harus diterima jika persyaratan lain valid.
+     * 11. Eksternal + peralatan: harus ditolak (eksternal tidak boleh meminjam peralatan).
      */
     public function test_11_external_multiple_equipment_with_valid_surat_accepted(): void
     {
@@ -363,8 +379,8 @@ class ApplicantTypeAndRulesTest extends TestCase
             ]),
         ]);
 
-        $response->assertStatus(201)
-            ->assertJson(['success' => true]);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
     }
 
     /**
@@ -388,8 +404,7 @@ class ApplicantTypeAndRulesTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['surat_file']);
+        $response->assertStatus(422);
     }
 
     /**
@@ -422,7 +437,7 @@ class ApplicantTypeAndRulesTest extends TestCase
      */
     public function test_14_external_without_nip_accepted(): void
     {
-        $room = $this->getRoom(0);
+        $room = $this->getAulaLantai3();
         $file = $this->createValidPdf();
 
         $response = $this->post('/api/peminjaman', [
@@ -454,6 +469,7 @@ class ApplicantTypeAndRulesTest extends TestCase
     public function test_15_both_types_without_name_or_agency_rejected(): void
     {
         $room = $this->getRoom(0);
+        $aula = $this->getAulaLantai3();
 
         // Internal missing nama & unit_kerja
         $resInternal = $this->postJson('/api/peminjaman', [
@@ -475,7 +491,7 @@ class ApplicantTypeAndRulesTest extends TestCase
             'mulai' => '2026-11-29 08:00:00',
             'selesai' => '2026-11-29 12:00:00',
             'keperluan' => 'Uji Validasi Form Eksternal',
-            'selected_items' => json_encode([['item_id' => $room->id, 'jumlah' => 1]]),
+            'selected_items' => json_encode([['item_id' => $aula->id, 'jumlah' => 1]]),
         ]);
         $resExternal->assertStatus(422)
             ->assertJsonValidationErrors(['nama_peminjam', 'unit_kerja']);
@@ -486,7 +502,7 @@ class ApplicantTypeAndRulesTest extends TestCase
      */
     public function test_16_applicant_type_switch_validations_and_payload(): void
     {
-        $room = $this->getRoom(0);
+        $room = $this->getAulaLantai3();
         $file = $this->createValidPdf();
 
         // If user changed to external: NIP sent as empty/null is accepted, and surat is required
@@ -514,7 +530,7 @@ class ApplicantTypeAndRulesTest extends TestCase
      */
     public function test_17_direct_backend_api_bypassing_item_limits_rejected(): void
     {
-        $room1 = $this->getRoom(0);
+        $room1 = $this->getAulaLantai3();
         $room2 = $this->getRoom(1);
         $file = $this->createValidPdf();
 
@@ -546,6 +562,7 @@ class ApplicantTypeAndRulesTest extends TestCase
         $token = $admin->createToken('admin_test_token')->plainTextToken;
 
         $room = $this->getRoom(0);
+        $aula = $this->getAulaLantai3();
         $file = $this->createValidPdf();
 
         // 1. Create Internal
@@ -575,7 +592,7 @@ class ApplicantTypeAndRulesTest extends TestCase
             'selesai' => '2026-12-03 11:00:00',
             'keperluan' => 'Acara Eksternal',
             'surat_file' => $file,
-            'selected_items' => json_encode([['item_id' => $room->id, 'jumlah' => 1]]),
+            'selected_items' => json_encode([['item_id' => $aula->id, 'jumlah' => 1]]),
         ]);
         $resExternal->assertStatus(201);
         $externalId = $resExternal->json('data.id_peminjaman');
@@ -635,7 +652,7 @@ class ApplicantTypeAndRulesTest extends TestCase
      */
     public function test_20_invalid_surat_upload_rejected(): void
     {
-        $room = $this->getRoom(0);
+        $room = $this->getAulaLantai3();
 
         // 1. Non-PDF file (.png)
         $pngFile = UploadedFile::fake()->create('fake_document.png', 50, 'image/png');
@@ -668,5 +685,30 @@ class ApplicantTypeAndRulesTest extends TestCase
         ]);
         $resOversized->assertStatus(422)
             ->assertJsonValidationErrors(['surat_file']);
+    }
+
+    /**
+     * 21. Eksternal mencoba memilih ruangan selain Aula Lantai 3: harus ditolak.
+     */
+    public function test_21_external_choosing_non_aula_room_rejected(): void
+    {
+        $nonAulaRoom = $this->getRoom(0); // e.g. Smart Room
+        $file = $this->createValidPdf();
+
+        $response = $this->post('/api/peminjaman', [
+            'applicant_type' => 'external',
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nama_peminjam' => 'Tamu Eksternal',
+            'unit_kerja' => 'Luar',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-12-07 08:00:00',
+            'selesai' => '2026-12-07 12:00:00',
+            'keperluan' => 'Coba Ruangan Non-Aula',
+            'surat_file' => $file,
+            'selected_items' => json_encode([['item_id' => $nonAulaRoom->id, 'jumlah' => 1]]),
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
     }
 }

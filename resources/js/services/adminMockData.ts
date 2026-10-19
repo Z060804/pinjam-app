@@ -3,7 +3,7 @@ import { Ruangan, Kendaraan, Perlengkapan, Permohonan } from '../types/admin';
 export const ADMIN_CREDENTIALS = {
   email: 'admin@siruang.test',
   password: 'AdminSiruang2026!',
-  name: 'Admin SiRuang',
+  name: 'Admin SIMPRU',
 };
 
 // ─── Initial Ruangan ──────────────────────────────────────────────────────────

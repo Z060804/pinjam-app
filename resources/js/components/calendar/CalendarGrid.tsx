@@ -58,37 +58,49 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
   }
 
   // Robust date-range check for each cell:
-  // An event matches a cell if cellDate is between its start date and end date!
+  // For recurring bookings, each individual session is stored on its specific occurrence date.
+  // For normal bookings (peminjaman biasa), according to user requirement:
+  // "tanggal yang dipilih tersebut harus ditampilkan pada tanggal 22 dan 30 Oktober saja. Jangan membuat event tambahan pada setiap tanggal di antaranya."
   const getEventsForDate = (cellDateStr: string): MasterPeminjaman[] => {
     return events.filter((ev) => {
       const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
       const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
       if (!start) return false;
-      return cellDateStr >= start && cellDateStr <= end;
+
+      if (start === end) {
+        return cellDateStr === start;
+      }
+
+      // Normal multi-day booking: show on start and end date only, not on intermediate dates!
+      return cellDateStr === start || cellDateStr === end;
     });
   };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center">
-        {dayLabels.map((lbl) => (
-          <div key={lbl} className="py-2.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
-            {lbl}
+      <div className="overflow-x-auto">
+        <div className="min-w-[640px]">
+          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center">
+            {dayLabels.map((lbl) => (
+              <div key={lbl} className="py-2.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                {lbl}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 border-l border-t-0">
-        {cells.map((cell, idx) => (
-          <CalendarCell
-            key={`${cell.dateString}-${idx}`}
-            dayNumber={cell.dayNumber}
-            isCurrentMonth={cell.isCurrentMonth}
-            isToday={cell.isToday}
-            dateString={cell.dateString}
-            events={getEventsForDate(cell.dateString)}
-            onSelectEvent={onSelectEvent}
-          />
-        ))}
+          <div className="grid grid-cols-7 border-l border-t-0">
+            {cells.map((cell, idx) => (
+              <CalendarCell
+                key={`${cell.dateString}-${idx}`}
+                dayNumber={cell.dayNumber}
+                isCurrentMonth={cell.isCurrentMonth}
+                isToday={cell.isToday}
+                dateString={cell.dateString}
+                events={getEventsForDate(cell.dateString)}
+                onSelectEvent={onSelectEvent}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

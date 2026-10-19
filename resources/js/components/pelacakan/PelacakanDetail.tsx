@@ -13,12 +13,31 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
   const items = data.items ?? [];
   const isExternal = data.applicant_type === 'external' || (data.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
 
+  const isRecurring = Boolean(data.is_recurring || data.parent_id);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
         <div>
           <span className="text-[11px] font-mono text-slate-400 block uppercase">ID Registrasi</span>
-          <h3 className="text-xl font-mono font-bold text-slate-900">{data.id_peminjaman}</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-xl font-mono font-bold text-slate-900">{data.id_peminjaman}</h3>
+            {isRecurring && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Peminjaman Berulang
+              </span>
+            )}
+            {data.session_label && (
+              <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                {data.session_label}
+              </span>
+            )}
+          </div>
+          {data.parent_id && (
+            <p className="text-[11px] font-mono text-slate-500 mt-0.5">
+              Nomor Registrasi Induk: <strong className="text-slate-700">{data.parent_registration_id ?? data.parent_id}</strong>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <BadgeStatus status={data.status} />
@@ -69,6 +88,62 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
         </div>
       </div>
 
+      {/* Rincian Sesi Peminjaman Berulang dengan Status Tiap Sesi */}
+      {isRecurring && data.recurring_schedules && data.recurring_schedules.length > 0 && (
+        <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200/80 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Rangkaian Jadwal Pertemuan ({data.recurring_schedules.length} Sesi)</span>
+            </h4>
+            {data.next_session_date && (
+              <span className="text-[10px] font-bold text-blue-800 bg-white px-2 py-0.5 rounded-md border border-blue-200">
+                Sesi Berikutnya: {data.next_session_date}
+              </span>
+            )}
+          </div>
+          <div className="space-y-1.5 text-xs">
+            {data.recurring_schedules.map((s, idx) => {
+              const sessionNum = s.session_number ?? idx + 1;
+              const isCurrentSession = (s.id_peminjaman === data.id_peminjaman || s.id === data.id_peminjaman);
+              return (
+                <div
+                  key={s.id_peminjaman || idx}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg border ${
+                    isCurrentSession
+                      ? 'bg-white border-blue-300 font-bold shadow-2xs'
+                      : 'bg-white/70 border-blue-100 text-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-800 font-semibold">
+                      Sesi {sessionNum} — {s.tgl_mulai} ({s.waktu_mulai} - {s.waktu_selesai} WIB)
+                    </span>
+                    {isCurrentSession && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
+                        Sesi Ini
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start sm:self-auto ${
+                      s.status === 'Disetujui'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : s.status === 'Dibatalkan'
+                        ? 'bg-slate-200 text-slate-600 border border-slate-300'
+                        : s.status === 'Tidak Disetujui'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}
+                  >
+                    {s.status}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Layers className="w-4 h-4 text-emerald-600" />
@@ -117,7 +192,7 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
         {data.petugas && (
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Petugas Verifikator: <strong className="text-slate-700">{data.petugas}</strong></span>
+            <span>Petugas Verifikator: <strong className="text-slate-700">{data.petugas.replace(/SiRuang/g, 'SIMPRU')}</strong></span>
           </div>
         )}
       </div>

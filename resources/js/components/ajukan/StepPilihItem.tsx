@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ItemJenis, CartItem, MasterJenis } from '../../types';
-import { Plus, Check, Search, AlertCircle } from 'lucide-react';
+import { Plus, Check, Search, AlertCircle, Ban } from 'lucide-react';
 
 interface StepPilihItemProps {
   items: ItemJenis[];
@@ -9,6 +9,18 @@ interface StepPilihItemProps {
   applicantType?: 'internal' | 'external';
   onToggleItem: (item: ItemJenis, jumlah: number) => void;
 }
+
+export const isAulaLantai3 = (item: ItemJenis): boolean => {
+  if (item.id_jenis !== 1) return false;
+  const nameLower = item.nama.toLowerCase();
+  const regId = item.registration_id ?? '';
+  return (
+    nameLower.includes('aula lantai 3') ||
+    nameLower.includes('sasana budhaya') ||
+    regId === 'RNG-AULA-02' ||
+    (item.id === 2 && nameLower.includes('aula'))
+  );
+};
 
 export const StepPilihItem: React.FC<StepPilihItemProps> = ({
   items,
@@ -19,6 +31,8 @@ export const StepPilihItem: React.FC<StepPilihItemProps> = ({
 }) => {
   const [activeCategory, setActiveCategory] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  const isExternal = applicantType === 'external';
 
   const filtered = items.filter((item) => {
     const matchCat = activeCategory ? item.id_jenis === activeCategory : true;
@@ -38,9 +52,23 @@ export const StepPilihItem: React.FC<StepPilihItemProps> = ({
       <div>
         <h3 className="text-base font-bold text-slate-900">1. Pilih Sumber Daya yang Dibutuhkan</h3>
         <p className="text-xs text-slate-500">
-          Anda dapat memilih sarana prasarana yang diperlukan. {applicantType === 'external' ? 'Pemohon eksternal dibatasi maksimal 1 ruangan dan 1 kendaraan.' : 'Pemohon internal dapat mengajukan beberapa item.'}
+          {isExternal
+            ? 'Pemohon eksternal hanya dapat mengajukan peminjaman Aula Lantai 3.'
+            : 'Pemohon internal dapat mengajukan peminjaman ruangan, kendaraan, dan peralatan sesuai kebutuhan dinas.'}
         </p>
       </div>
+
+      {isExternal && (
+        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs">
+          <AlertCircle className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold">Ketentuan Khusus Pemohon Eksternal:</span>
+            <p className="mt-0.5 leading-relaxed text-purple-800">
+              Pemohon eksternal hanya dapat mengajukan peminjaman <strong>Aula Lantai 3</strong>. Ruangan lain, kendaraan dinas, dan peralatan/perlengkapan tidak dapat dipinjam oleh pemohon eksternal.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex gap-1 overflow-x-auto pb-1 sm:pb-0">
@@ -88,18 +116,25 @@ export const StepPilihItem: React.FC<StepPilihItemProps> = ({
         ) : (
           filtered.map((item) => {
             const selected = isSelected(item.id);
+            const isItemAula = isAulaLantai3(item);
+            const isDisallowedForExternal = isExternal && !isItemAula;
+
             return (
               <div
                 key={item.id}
                 className={`p-3.5 rounded-xl border transition-all flex items-start justify-between gap-3 ${
-                  selected
+                  isDisallowedForExternal
+                    ? 'border-slate-200 bg-slate-50/70 opacity-60'
+                    : selected
                     ? 'border-emerald-300 bg-emerald-50/40 shadow-xs'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-900">{item.nama}</span>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs font-bold ${isDisallowedForExternal ? 'text-slate-500' : 'text-slate-900'}`}>
+                      {item.nama}
+                    </span>
                     {item.registration_id && (
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
                         {item.registration_id}
@@ -107,19 +142,30 @@ export const StepPilihItem: React.FC<StepPilihItemProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-slate-500 line-clamp-1">{item.keterangan}</p>
-                  <span className="text-[10px] text-emerald-700 font-medium">Stok: {item.quantity} unit</span>
+                  {isDisallowedForExternal ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-rose-600 font-semibold bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
+                      <Ban className="w-3 h-3" />
+                      Tidak tersedia untuk pemohon eksternal
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-emerald-700 font-medium">Stok: {item.quantity} unit</span>
+                  )}
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => onToggleItem(item, 1)}
-                  className={`p-2 rounded-lg text-xs font-semibold cursor-pointer shrink-0 transition-colors ${
-                    selected
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 text-[#009966] hover:bg-emerald-100'
+                  disabled={isDisallowedForExternal}
+                  onClick={() => !isDisallowedForExternal && onToggleItem(item, 1)}
+                  className={`p-2 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                    isDisallowedForExternal
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : selected
+                      ? 'bg-emerald-600 text-white cursor-pointer'
+                      : 'bg-emerald-50 text-[#009966] hover:bg-emerald-100 cursor-pointer'
                   }`}
+                  title={isDisallowedForExternal ? 'Hanya Aula Lantai 3 yang dapat dipinjam oleh pemohon eksternal' : undefined}
                 >
-                  {selected ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  {isDisallowedForExternal ? <Ban className="w-4 h-4 text-slate-400" /> : selected ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                 </button>
               </div>
             );
