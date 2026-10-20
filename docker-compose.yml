@@ -1,0 +1,23 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    working_dir: /var/www/html
+
+    env_file:
+      - .env
+
+    ports:
+      - "8002:80"
+
+    networks:
+      - lkh-network
+
+networks:
+  lkh-network:
+    external: true
+    name: lkh-network
