@@ -51,14 +51,123 @@ class BookingService
     }
 
     /**
+     * Menentukan sesi pemakaian aktif untuk peminjaman biasa (single day atau multihari).
+     * Aturan SIMPRU:
+     * - Peminjaman satu hari (tgl_mulai === tgl_selesai): 1 sesi pada tanggal tersebut.
+     * - Peminjaman biasa multihari (tgl_mulai !== tgl_selesai): BUKAN satu blok pemakaian kontinu.
+     *   Hanya tanggal mulai dan tanggal selesai yang menjadi sesi pemakaian aktif,
+     *   keduanya menggunakan interval jam yang sama sesuai input form (waktu_mulai s/d waktu_selesai).
+     *   Tanggal-tanggal di antara keduanya benar-benar kosong dan bebas dipesan.
+     *
+     * @return array<int, array{date: string, mulai: string, selesai: string, waktu_mulai: string, waktu_selesai: string}>
+     */
+    public function getEffectiveSessions(string $mulai, string $selesai): array
+    {
+        $m = Carbon::parse($mulai);
+        $s = Carbon::parse($selesai);
+
+        $startDate = $m->toDateString();
+        $endDate = $s->toDateString();
+
+        $waktuMulai = $m->format('H:i');
+        $waktuSelesai = $s->format('H:i');
+
+        if ($startDate === $endDate) {
+            return [
+                [
+                    'date' => $startDate,
+                    'mulai' => "{$startDate} {$waktuMulai}:00",
+                    'selesai' => "{$startDate} {$waktuSelesai}:00",
+                    'waktu_mulai' => $waktuMulai,
+                    'waktu_selesai' => $waktuSelesai,
+                ],
+            ];
+        }
+
+        return [
+            [
+                'date' => $startDate,
+                'mulai' => "{$startDate} {$waktuMulai}:00",
+                'selesai' => "{$startDate} {$waktuSelesai}:00",
+                'waktu_mulai' => $waktuMulai,
+                'waktu_selesai' => $waktuSelesai,
+            ],
+            [
+                'date' => $endDate,
+                'mulai' => "{$endDate} {$waktuMulai}:00",
+                'selesai' => "{$endDate} {$waktuSelesai}:00",
+                'waktu_mulai' => $waktuMulai,
+                'waktu_selesai' => $waktuSelesai,
+            ],
+        ];
+    }
+
+    /**
+     * Ambil sesi aktif dari record peminjaman yang tersimpan di database.
+     *
+     * @return array<int, array{date: string, mulai: string, selesai: string, waktu_mulai: string, waktu_selesai: string}>
+     */
+    public function getBookingEffectiveSessions(Peminjaman $booking): array
+    {
+        $startDate = $booking->tgl_mulai ?: ($booking->mulai ? Carbon::parse($booking->mulai)->toDateString() : null);
+        $endDate = $booking->tgl_selesai ?: ($booking->selesai ? Carbon::parse($booking->selesai)->toDateString() : $startDate);
+
+        if (! $startDate) {
+            return [];
+        }
+
+        $waktuMulai = $booking->waktu_mulai
+            ?: ($booking->mulai ? Carbon::parse($booking->mulai)->format('H:i') : '08:00');
+        $waktuSelesai = $booking->waktu_selesai
+            ?: ($booking->selesai ? Carbon::parse($booking->selesai)->format('H:i') : '16:00');
+
+        if (! $endDate || $startDate === $endDate) {
+            return [
+                [
+                    'date' => $startDate,
+                    'mulai' => "{$startDate} {$waktuMulai}:00",
+                    'selesai' => "{$startDate} {$waktuSelesai}:00",
+                    'waktu_mulai' => $waktuMulai,
+                    'waktu_selesai' => $waktuSelesai,
+                ],
+            ];
+        }
+
+        // Peminjaman biasa multihari: hanya tanggal awal dan tanggal akhir yang menjadi sesi
+        return [
+            [
+                'date' => $startDate,
+                'mulai' => "{$startDate} {$waktuMulai}:00",
+                'selesai' => "{$startDate} {$waktuSelesai}:00",
+                'waktu_mulai' => $waktuMulai,
+                'waktu_selesai' => $waktuSelesai,
+            ],
+            [
+                'date' => $endDate,
+                'mulai' => "{$endDate} {$waktuMulai}:00",
+                'selesai' => "{$endDate} {$waktuSelesai}:00",
+                'waktu_mulai' => $waktuMulai,
+                'waktu_selesai' => $waktuSelesai,
+            ],
+        ];
+    }
+
+    /**
      * Periksa bentrok jadwal peminjaman terhadap peminjaman berstatus 'Disetujui'.
-     * Menggunakan rumus interval overlap: mulai < request_selesai AND selesai > request_mulai
+     * Membandingkan identitas sumber daya, tanggal sesi aktual, dan interval jam aktual.
+     * Batas jam yang bersentuhan (misal 08.00-10.00 vs 10.00-12.00) DIPERBOLEHKAN (tidak bentrok).
      */
     public function detectConflicts(string $mulai, string $selesai, array $items, ?string $excludePeminjamanId = null): array
     {
         $conflicts = [];
-        $mulaiCarbon = Carbon::parse($mulai);
-        $selesaiCarbon = Carbon::parse($selesai);
+        $requestSessions = $this->getEffectiveSessions($mulai, $selesai);
+        if (empty($requestSessions)) {
+            return [];
+        }
+
+        $requestDates = array_column($requestSessions, 'date');
+        $minDate = min($requestDates);
+        $maxDate = max($requestDates);
 
         $query = Peminjaman::where('status', 'Disetujui');
 
@@ -69,18 +178,18 @@ class BookingService
             });
         }
 
-        $query->where(function ($q) use ($mulaiCarbon, $selesaiCarbon) {
-            $q->where(function ($sub) use ($mulaiCarbon, $selesaiCarbon) {
-                $sub->where('mulai', '<', $selesaiCarbon)
-                    ->where('selesai', '>', $mulaiCarbon);
-            })->orWhere(function ($sub) use ($mulaiCarbon, $selesaiCarbon) {
-                $sub->whereNull('mulai')
-                    ->where('tgl_mulai', '<=', $selesaiCarbon->toDateString())
-                    ->where('tgl_selesai', '>=', $mulaiCarbon->toDateString());
+        // Ambil kandidat peminjaman disetujui yang beririsan dengan rentang tanggal pengajuan
+        $query->where(function ($q) use ($minDate, $maxDate) {
+            $q->where(function ($sub) use ($minDate, $maxDate) {
+                $sub->whereDate('mulai', '<=', $maxDate)
+                    ->whereDate('selesai', '>=', $minDate);
+            })->orWhere(function ($sub) use ($minDate, $maxDate) {
+                $sub->where('tgl_mulai', '<=', $maxDate)
+                    ->where('tgl_selesai', '>=', $minDate);
             });
         });
 
-        $overlappingBookings = $query->with(['items.item', 'itemPeminjaman.item'])->get();
+        $candidateBookings = $query->with(['items.item', 'itemPeminjaman.item'])->get();
 
         foreach ($items as $reqItem) {
             $itemId = (int) ($reqItem['item_id'] ?? $reqItem['item']['id'] ?? 0);
@@ -91,38 +200,180 @@ class BookingService
                 continue;
             }
 
-            $bookedQty = 0;
-            $conflictDetails = [];
+            // Periksa setiap sesi aktif dari pengajuan baru
+            foreach ($requestSessions as $rSession) {
+                $bookedQtyOnSession = 0;
+                $sessionConflicts = [];
 
-            foreach ($overlappingBookings as $booking) {
-                $bItems = $this->consolidateItems($booking);
-                foreach ($bItems as $bookedItem) {
-                    if ((int) $bookedItem->item_id === $itemId) {
-                        $bookedQty += (int) $bookedItem->jumlah;
-                        $conflictDetails[] = [
-                            'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
-                            'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
-                            'mulai' => (string) $booking->mulai,
-                            'selesai' => (string) $booking->selesai,
-                            'keperluan' => $booking->keperluan,
-                        ];
+                foreach ($candidateBookings as $booking) {
+                    $bSessions = $this->getBookingEffectiveSessions($booking);
+                    foreach ($bSessions as $bSession) {
+                        // Harus pada tanggal yang sama persis
+                        if ($bSession['date'] !== $rSession['date']) {
+                            continue;
+                        }
+
+                        // Periksa tumpang tindih waktu: rMulai < bSelesai && rSelesai > bMulai
+                        // Batas bersentuhan (misal 08:00-10:00 vs 10:00-12:00) TIDAK bentrok
+                        $rStart = $rSession['waktu_mulai'];
+                        $rEnd = $rSession['waktu_selesai'];
+                        $bStart = $bSession['waktu_mulai'];
+                        $bEnd = $bSession['waktu_selesai'];
+
+                        if ($rStart < $bEnd && $rEnd > $bStart) {
+                            $bItems = $this->consolidateItems($booking);
+                            foreach ($bItems as $bookedItem) {
+                                if ((int) $bookedItem->item_id === $itemId) {
+                                    $bookedQtyOnSession += (int) $bookedItem->jumlah;
+                                    $sessionConflicts[] = [
+                                        'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
+                                        'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
+                                        'date' => $bSession['date'],
+                                        'mulai' => $bSession['mulai'],
+                                        'selesai' => $bSession['selesai'],
+                                        'waktu_mulai' => $bSession['waktu_mulai'],
+                                        'waktu_selesai' => $bSession['waktu_selesai'],
+                                        'keperluan' => $booking->keperluan,
+                                        'jumlah' => (int) $bookedItem->jumlah,
+                                    ];
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            if (($bookedQty + $reqQty) > $itemModel->quantity) {
-                $conflicts[] = [
-                    'item_id' => $itemId,
-                    'item_nama' => $itemModel->nama,
-                    'kapasitas_total' => $itemModel->quantity,
-                    'sudah_dipinjam' => $bookedQty,
-                    'diminta' => $reqQty,
-                    'overlapping_bookings' => $conflictDetails,
-                ];
+                if (($bookedQtyOnSession + $reqQty) > $itemModel->quantity) {
+                    $conflicts[] = [
+                        'item_id' => $itemId,
+                        'item_nama' => $itemModel->nama,
+                        'session_date' => $rSession['date'],
+                        'session_waktu_mulai' => $rSession['waktu_mulai'],
+                        'session_waktu_selesai' => $rSession['waktu_selesai'],
+                        'kapasitas_total' => $itemModel->quantity,
+                        'sudah_dipinjam' => $bookedQtyOnSession,
+                        'diminta' => $reqQty,
+                        'overlapping_bookings' => $sessionConflicts,
+                    ];
+                }
             }
         }
 
         return $conflicts;
+    }
+
+    /**
+     * Validasi aturan hari operasional, jam kerja, dan hari libur nasional resmi 2026.
+     * Aturan:
+     * A. Ruangan:
+     *    - Pemohon eksternal boleh meminjam ruangan pada Sabtu dan Minggu (Aula Lantai 3).
+     *    - Tidak ada larangan akhir pekan maupun hari libur untuk ruangan.
+     * B. Kendaraan dan Perlengkapan:
+     *    - Jam operasional Senin–Kamis: 07.30–16.00 WIB.
+     *    - Jam operasional Jumat: 07.30–16.30 WIB.
+     *    - DILARANG dipesan pada Sabtu dan Minggu.
+     *    - DILARANG dipesan pada Hari Libur Nasional resmi Indonesia tahun 2026.
+     *    - Berlaku untuk pemohon internal maupun eksternal.
+     *
+     * @return array{valid: bool, message?: string}
+     */
+    public function validateOperationalRules(string $mulai, string $selesai, array $itemsPayload, bool $isExternal = false): array
+    {
+        $sessions = $this->getEffectiveSessions($mulai, $selesai);
+        $holidays = config('holidays.2026', []);
+
+        foreach ($itemsPayload as $item) {
+            $itemId = (int) ($item['item_id'] ?? $item['item']['id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            $itemModel = ItemJenis::with('jenis')->find($itemId);
+            if (! $itemModel) {
+                continue;
+            }
+
+            $category = self::CATEGORY_MAP[$itemModel->id_jenis]
+                ?? strtolower($itemModel->jenis?->nama ?? 'ruangan');
+
+            // Aturan khusus Kendaraan dan Perlengkapan
+            if (in_array($category, ['kendaraan', 'perlengkapan'])) {
+                foreach ($sessions as $session) {
+                    $dateStr = $session['date'];
+                    $carbonDate = Carbon::parse($dateStr);
+                    $dayOfWeek = $carbonDate->dayOfWeek; // 0 = Minggu, 6 = Sabtu
+                    $dateFormatted = $carbonDate->translatedFormat('d F Y');
+
+                    // 1. Larangan Akhir Pekan (Sabtu / Minggu)
+                    if ($dayOfWeek === 0 || $dayOfWeek === 6) {
+                        $dayName = $dayOfWeek === 0 ? 'Minggu' : 'Sabtu';
+
+                        return [
+                            'valid' => false,
+                            'message' => "Kendaraan dan perlengkapan dinas ({$itemModel->nama}) tidak dapat dipinjam pada akhir pekan ({$dayName}, {$dateFormatted}). Layanan hanya tersedia pada hari kerja.",
+                        ];
+                    }
+
+                    // 2. Larangan Hari Libur Nasional Resmi Indonesia 2026
+                    if (isset($holidays[$dateStr])) {
+                        $holidayName = $holidays[$dateStr];
+
+                        return [
+                            'valid' => false,
+                            'message' => "Kendaraan dan perlengkapan dinas ({$itemModel->nama}) tidak dapat dipinjam pada hari libur nasional ({$holidayName}, {$dateFormatted}).",
+                        ];
+                    }
+
+                    // 3. Batasan Jam Operasional
+                    // Senin–Kamis: 07.30–16.00 WIB
+                    // Jumat: 07.30–16.30 WIB
+                    $waktuMulai = $session['waktu_mulai'];
+                    $waktuSelesai = $session['waktu_selesai'];
+
+                    if ($dayOfWeek >= 1 && $dayOfWeek <= 4) {
+                        // Senin - Kamis
+                        if ($waktuMulai < '07:30' || $waktuSelesai > '16:00') {
+                            return [
+                                'valid' => false,
+                                'message' => "Jam operasional peminjaman {$category} ({$itemModel->nama}) pada hari Senin–Kamis adalah pukul 07.30–16.00 WIB (jadwal diajukan: {$waktuMulai}–{$waktuSelesai} WIB).",
+                            ];
+                        }
+                    } elseif ($dayOfWeek === 5) {
+                        // Jumat
+                        if ($waktuMulai < '07:30' || $waktuSelesai > '16:30') {
+                            return [
+                                'valid' => false,
+                                'message' => "Jam operasional peminjaman {$category} ({$itemModel->nama}) pada hari Jumat adalah pukul 07.30–16.30 WIB (jadwal diajukan: {$waktuMulai}–{$waktuSelesai} WIB).",
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return ['valid' => true];
+    }
+
+    /**
+     * Format rentang waktu peminjaman untuk tampilan pesan bentrok yang informatif.
+     */
+    public function formatBookingTimeRange(?string $mulai, ?string $selesai): string
+    {
+        if (! $mulai || ! $selesai) {
+            return '';
+        }
+
+        try {
+            $m = Carbon::parse($mulai);
+            $s = Carbon::parse($selesai);
+
+            if ($m->toDateString() === $s->toDateString()) {
+                return $m->translatedFormat('d F Y').' ('.$m->format('H:i').' - '.$s->format('H:i').' WIB)';
+            }
+
+            return $m->translatedFormat('d M Y H:i').' s/d '.$s->translatedFormat('d M Y H:i').' WIB';
+        } catch (\Throwable) {
+            return "{$mulai} s/d {$selesai}";
+        }
     }
 
     /**
@@ -217,18 +468,44 @@ class BookingService
                 ];
             }
 
-            // Validasi ketersediaan untuk setiap jadwal yang dihasilkan
+            $applicantType = $additionalData['applicant_type'] ?? $validated['applicant_type'] ?? null;
+            $pihakPemohonInput = $additionalData['pihak_pemohon'] ?? $validated['pihak_pemohon'] ?? null;
+            $isExternal = ($applicantType === 'external') || ($pihakPemohonInput && (str_contains(strtolower($pihakPemohonInput), 'eksternal') || str_contains(strtolower($pihakPemohonInput), 'external')));
+
+            // 1. Validasi aturan operasional (jam kerja, hari kerja, hari libur nasional 2026)
+            foreach ($schedules as $sched) {
+                $opResult = $this->validateOperationalRules($sched['mulai'], $sched['selesai'], $itemsPayload, $isExternal);
+                if (! $opResult['valid']) {
+                    return [
+                        'success' => false,
+                        'message' => $opResult['message'] ?? 'Permohonan melanggar aturan operasional sarana prasarana.',
+                        'conflicts' => [],
+                    ];
+                }
+            }
+
+            // 2. Validasi ketersediaan dan bentrok jadwal untuk setiap jadwal yang dihasilkan
             foreach ($schedules as $sched) {
                 $conflicts = $this->detectConflicts($sched['mulai'], $sched['selesai'], $itemsPayload);
                 if (! empty($conflicts)) {
+                    $firstConflict = $conflicts[0];
                     $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-                    $dateLabel = Carbon::parse($sched['date'])->translatedFormat('d F Y');
+                    $dateLabel = Carbon::parse($firstConflict['session_date'] ?? $sched['date'])->translatedFormat('d F Y');
+                    $reqTime = ($firstConflict['session_waktu_mulai'] ?? '').'-'.($firstConflict['session_waktu_selesai'] ?? '').' WIB';
+
+                    $existingDetail = '';
+                    if (! empty($firstConflict['overlapping_bookings'][0])) {
+                        $firstOverlap = $firstConflict['overlapping_bookings'][0];
+                        $oldTime = ($firstOverlap['waktu_mulai'] ?? '').'-'.($firstOverlap['waktu_selesai'] ?? '').' WIB';
+                        $peminjamOld = $firstOverlap['peminjam'] ?? 'peminjam lain';
+                        $existingDetail = " (jadwal lama: {$oldTime} oleh {$peminjamOld})";
+                    }
 
                     return [
                         'success' => false,
-                        'message' => "Jadwal bentrok pada {$dateLabel}: {$conflictItemNames} sudah dipinjam pada rentang waktu yang sama.",
+                        'message' => "Jadwal bentrok pada {$dateLabel}: {$conflictItemNames} sudah dipinjam pada rentang waktu {$reqTime}{$existingDetail}.",
                         'conflicts' => $conflicts,
-                        'conflicting_date' => $sched['date'],
+                        'conflicting_date' => $firstConflict['session_date'] ?? $sched['date'],
                     ];
                 }
             }
@@ -240,7 +517,8 @@ class BookingService
             $pihakPemohonInput = $additionalData['pihak_pemohon'] ?? $validated['pihak_pemohon'] ?? null;
             $isExternal = ($applicantType === 'external') || ($pihakPemohonInput && (str_contains(strtolower($pihakPemohonInput), 'eksternal') || str_contains(strtolower($pihakPemohonInput), 'external')));
             $pihakPemohon = $isExternal ? ($pihakPemohonInput ?: 'Eksternal (Madrasah/KUA/Lainnya)') : ($pihakPemohonInput ?: 'Internal Kemenag Sleman');
-            $nipToStore = $isExternal ? null : (! empty($validated['nip']) ? $validated['nip'] : null);
+            $nipRaw = isset($validated['nip']) ? trim((string) $validated['nip']) : null;
+            $nipToStore = ($nipRaw !== '' && $nipRaw !== null) ? $nipRaw : null;
 
             $firstSched = $schedules[0];
             $waktuMulai = strlen($firstSched['mulai']) >= 16 ? substr($firstSched['mulai'], 11, 5) : '08:00';
@@ -397,12 +675,22 @@ class BookingService
             );
 
             if (! empty($conflicts)) {
+                $firstConflict = $conflicts[0];
                 $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-                $dateLabel = Carbon::parse($rec->tgl_mulai)->translatedFormat('d F Y');
+                $dateLabel = Carbon::parse($firstConflict['session_date'] ?? $rec->tgl_mulai)->translatedFormat('d F Y');
+                $reqTime = ($firstConflict['session_waktu_mulai'] ?? '').'-'.($firstConflict['session_waktu_selesai'] ?? '').' WIB';
+
+                $existingDetail = '';
+                if (! empty($firstConflict['overlapping_bookings'][0])) {
+                    $firstOverlap = $firstConflict['overlapping_bookings'][0];
+                    $oldTime = ($firstOverlap['waktu_mulai'] ?? '').'-'.($firstOverlap['waktu_selesai'] ?? '').' WIB';
+                    $peminjamOld = $firstOverlap['peminjam'] ?? 'peminjam lain';
+                    $existingDetail = " (jadwal lama: {$oldTime} oleh {$peminjamOld})";
+                }
 
                 return [
                     'success' => false,
-                    'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada tanggal {$dateLabel} untuk {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
+                    'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada tanggal {$dateLabel} untuk {$conflictItemNames} (jam {$reqTime}) dengan peminjaman lain yang sudah disetujui{$existingDetail}.",
                     'conflicts' => $conflicts,
                 ];
             }

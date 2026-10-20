@@ -12,9 +12,19 @@ function getEventsForDate(events: MasterPeminjaman[], cellDateStr: string): Mast
       return cellDateStr === start;
     }
 
-    // Normal multi-day booking: only show on start and end dates!
+    // Normal multi-day booking: show on start date and end date only!
     return cellDateStr === start || cellDateStr === end;
   });
+}
+
+function getRangeIndicator(ev: MasterPeminjaman, dateString: string): string | null {
+  const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
+  const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
+  if (!start || !end || start === end) return null;
+
+  if (dateString === start) return 'Mulai';
+  if (dateString === end) return 'Habis';
+  return null;
 }
 
 describe('CalendarGrid Event Date Matching', () => {
@@ -34,23 +44,33 @@ describe('CalendarGrid Event Date Matching', () => {
     is_recurring: false,
   };
 
-  it('displays normal multi-day event on start date (22 Oct) and end date (30 Oct) only', () => {
+  it('displays normal multi-day event only on start (22 Oct) and end (30 Oct), while intermediate dates are completely free', () => {
     const events = [normalMultiDayEvent];
 
-    // Must show on start date
-    expect(getEventsForDate(events, '2026-10-22')).toHaveLength(1);
+    // Must show on start date (22 Oct) with 'Mulai'
+    const evStart = getEventsForDate(events, '2026-10-22');
+    expect(evStart).toHaveLength(1);
+    expect(getRangeIndicator(evStart[0], '2026-10-22')).toBe('Mulai');
 
-    // Must NOT show on intermediate dates 23..29 Oct
-    expect(getEventsForDate(events, '2026-10-23')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-24')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-25')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-26')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-27')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-28')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-29')).toHaveLength(0);
+    // Intermediate dates 23..29 Oct must be EMPTY and available for other bookings
+    const intermediateDates = [
+      '2026-10-23',
+      '2026-10-24',
+      '2026-10-25',
+      '2026-10-26',
+      '2026-10-27',
+      '2026-10-28',
+      '2026-10-29',
+    ];
+    intermediateDates.forEach((dateStr) => {
+      const evMid = getEventsForDate(events, dateStr);
+      expect(evMid).toHaveLength(0);
+    });
 
-    // Must show on end date
-    expect(getEventsForDate(events, '2026-10-30')).toHaveLength(1);
+    // Must show on end date (30 Oct) with 'Habis'
+    const evEnd = getEventsForDate(events, '2026-10-30');
+    expect(evEnd).toHaveLength(1);
+    expect(getRangeIndicator(evEnd[0], '2026-10-30')).toBe('Habis');
 
     // Must NOT show outside the range
     expect(getEventsForDate(events, '2026-10-21')).toHaveLength(0);

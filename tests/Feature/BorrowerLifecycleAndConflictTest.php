@@ -2,14 +2,14 @@
 
 namespace Tests\Feature;
 
-use Tests\TestCase;
-use App\Models\User;
 use App\Models\ItemJenis;
-use App\Models\Peminjaman;
 use App\Models\ItemPeminjaman;
+use App\Models\Peminjaman;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
 
 class BorrowerLifecycleAndConflictTest extends TestCase
 {
@@ -46,7 +46,7 @@ class BorrowerLifecycleAndConflictTest extends TestCase
         // 1. Empty payload
         $resEmpty = $this->postJson('/api/peminjaman', []);
         $resEmpty->assertStatus(422)
-                 ->assertJsonValidationErrors(['nama_peminjam', 'unit_kerja', 'mulai', 'selesai', 'keperluan', 'selected_items']);
+            ->assertJsonValidationErrors(['nama_peminjam', 'unit_kerja', 'mulai', 'selesai', 'keperluan', 'selected_items']);
 
         // 2. selesai earlier than mulai
         $resTime = $this->postJson('/api/peminjaman', [
@@ -96,7 +96,7 @@ class BorrowerLifecycleAndConflictTest extends TestCase
 
         $response = $this->postJson('/api/peminjaman', $payload);
         $response->assertStatus(201)
-                 ->assertJson(['success' => true]);
+            ->assertJson(['success' => true]);
 
         $idPeminjaman = $response->json('data.id_peminjaman');
         $this->assertNotEmpty($idPeminjaman);
@@ -112,13 +112,13 @@ class BorrowerLifecycleAndConflictTest extends TestCase
         // Verify tracking endpoint retrieves the created record
         $trackRes = $this->getJson("/api/peminjaman/{$idPeminjaman}");
         $trackRes->assertStatus(200)
-                 ->assertJson([
-                     'success' => true,
-                     'data' => [
-                         'id_peminjaman' => $idPeminjaman,
-                         'nama_peminjam' => 'Dra. Hj. Siti Aminah',
-                     ],
-                 ]);
+            ->assertJson([
+                'success' => true,
+                'data' => [
+                    'id_peminjaman' => $idPeminjaman,
+                    'nama_peminjam' => 'Dra. Hj. Siti Aminah',
+                ],
+            ]);
     }
 
     /**
@@ -159,8 +159,8 @@ class BorrowerLifecycleAndConflictTest extends TestCase
         ]);
 
         $resConflict->assertStatus(422)
-                    ->assertJson(['success' => false])
-                    ->assertJsonStructure(['message', 'conflicts']);
+            ->assertJson(['success' => false])
+            ->assertJsonStructure(['message', 'conflicts']);
 
         // 3. A non-overlapping booking (13:00 - 16:00) on same day must succeed
         $resAvailable = $this->postJson('/api/peminjaman', [
@@ -173,7 +173,7 @@ class BorrowerLifecycleAndConflictTest extends TestCase
         ]);
 
         $resAvailable->assertStatus(201)
-                     ->assertJson(['success' => true]);
+            ->assertJson(['success' => true]);
     }
 
     /**
@@ -228,8 +228,8 @@ class BorrowerLifecycleAndConflictTest extends TestCase
         ]);
 
         $approveRes->assertStatus(422)
-                   ->assertJson(['success' => false])
-                   ->assertJsonStructure(['message', 'conflicts']);
+            ->assertJson(['success' => false])
+            ->assertJsonStructure(['message', 'conflicts']);
     }
 
     /**
@@ -240,7 +240,7 @@ class BorrowerLifecycleAndConflictTest extends TestCase
         Storage::fake('local');
         $item = ItemJenis::first();
 
-        $file = UploadedFile::fake()->createWithContent('surat_permohonan.pdf', "%PDF-1.4\n" . str_repeat('A', 1024 * 50));
+        $file = UploadedFile::fake()->createWithContent('surat_permohonan.pdf', "%PDF-1.4\n".str_repeat('A', 1024 * 50));
 
         $payload = [
             'nama_peminjam' => 'H. Suwandi, M.Pd.',
@@ -256,11 +256,367 @@ class BorrowerLifecycleAndConflictTest extends TestCase
 
         $response = $this->post('/api/peminjaman', $payload);
         $response->assertStatus(201)
-                 ->assertJson(['success' => true]);
+            ->assertJson(['success' => true]);
 
         $savedId = $response->json('data.id_peminjaman');
         $booking = Peminjaman::find($savedId);
         $this->assertNotNull($booking->surat_url);
         Storage::disk('local')->assertExists($booking->surat_url);
+    }
+
+    /**
+     * Regression Test 1: Peminjaman biasa multi-hari (22-30 Oktober) hanya memblokir sesi pada tanggal mulai dan selesai.
+     * Tanggal di antaranya (26-28 Oktober) kosong dan dapat dipesan.
+     * Jadwal tumpang tindih pada tanggal awal/akhir ditolak dengan pesan bentrok informatif.
+     */
+    public function test_multiday_normal_booking_leaves_intermediate_dates_free_and_blocks_boundary_sessions(): void
+    {
+        $aula = ItemJenis::where('nama', 'like', '%Aula Lantai 3%')->first();
+        $this->assertNotNull($aula);
+
+        // 1. Buat peminjaman multi-hari yang sudah disetujui (22 s/d 30 Oktober, 08:00 - 15:00)
+        $approved = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202610-099',
+            'id' => 'PMJ-202610-099',
+            'tgl_pengajuan' => '2026-10-15',
+            'nama_peminjam' => 'Panitia Bimtek Kemenag',
+            'nama_pemohon' => 'Panitia Bimtek Kemenag',
+            'unit_kerja' => 'Bimas Islam',
+            'mulai' => '2026-10-22 08:00:00',
+            'selesai' => '2026-10-30 15:00:00',
+            'tgl_mulai' => '2026-10-22',
+            'tgl_selesai' => '2026-10-30',
+            'waktu_mulai' => '08:00',
+            'waktu_selesai' => '15:00',
+            'keperluan' => 'Pelatihan Penghulu Tingkat Kabupaten',
+            'status' => 'Disetujui',
+            'is_recurring' => false,
+        ]);
+        ItemPeminjaman::create([
+            'id_peminjaman' => $approved->id_peminjaman,
+            'item_id' => $aula->id,
+            'jumlah' => 1,
+        ]);
+
+        // 2. Tanggal antara (26-28 Oktober): BUKAN sesi pemakaian -> HARUS BERHASIL (201)
+        $payloadIntermediate = [
+            'nama_peminjam' => 'Dra. Hj. Nurul Hidayah',
+            'unit_kerja' => 'Penyelenggara Zawa',
+            'mulai' => '2026-10-26 10:00:00',
+            'selesai' => '2026-10-28 12:00:00',
+            'keperluan' => 'Rapat Koordinasi Pengelolaan Wakaf',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ];
+
+        $resInter = $this->postJson('/api/peminjaman', $payloadIntermediate);
+        $resInter->assertStatus(201)
+            ->assertJson(['success' => true]);
+
+        // 3. Tanggal awal (22 Oktober) tumpang tindih jam (09:00 - 12:00) -> HARUS DITOLAK (422)
+        $payloadStartConflict = [
+            'nama_peminjam' => 'Acara Tumpang Tindih Tanggal Awal',
+            'unit_kerja' => 'Penma',
+            'mulai' => '2026-10-22 09:00:00',
+            'selesai' => '2026-10-22 12:00:00',
+            'keperluan' => 'Rapat Koordinasi Penma',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ];
+        $resStartConflict = $this->postJson('/api/peminjaman', $payloadStartConflict);
+        $resStartConflict->assertStatus(422)
+            ->assertJson(['success' => false]);
+        $this->assertStringContainsString('Aula Lantai 3', $resStartConflict->json('message'));
+        $this->assertStringContainsString('22 October 2026', $resStartConflict->json('message'));
+
+        // 4. Tanggal akhir (30 Oktober) tumpang tindih jam (10:00 - 14:00) -> HARUS DITOLAK (422)
+        $payloadEndConflict = [
+            'nama_peminjam' => 'Acara Tumpang Tindih Tanggal Akhir',
+            'unit_kerja' => 'Penma',
+            'mulai' => '2026-10-30 10:00:00',
+            'selesai' => '2026-10-30 14:00:00',
+            'keperluan' => 'Penutupan Acara Penma',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ];
+        $resEndConflict = $this->postJson('/api/peminjaman', $payloadEndConflict);
+        $resEndConflict->assertStatus(422)
+            ->assertJson(['success' => false]);
+        $this->assertStringContainsString('Aula Lantai 3', $resEndConflict->json('message'));
+        $this->assertStringContainsString('30 October 2026', $resEndConflict->json('message'));
+
+        // 5. Tanggal awal batas jam bersentuhan (15:00 - 16:00) -> HARUS BERHASIL (201)
+        $payloadTouching = [
+            'nama_peminjam' => 'Acara Jam Bersentuhan',
+            'unit_kerja' => 'Penma',
+            'mulai' => '2026-10-22 15:00:00',
+            'selesai' => '2026-10-22 16:00:00',
+            'keperluan' => 'Evaluasi Sore Hari',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ];
+        $resTouching = $this->postJson('/api/peminjaman', $payloadTouching);
+        $resTouching->assertStatus(201)
+            ->assertJson(['success' => true]);
+
+        // 6. Pastikan calendar/list API mengembalikan record ini dengan tanggal mulai 22 dan selesai 30 Oktober
+        $calRes = $this->getJson('/api/peminjaman');
+        $calRes->assertStatus(200);
+        $found = collect($calRes->json('data'))->firstWhere('id', 'PMJ-202610-099');
+        $this->assertNotNull($found);
+        $this->assertEquals('2026-10-22', $found['tgl_mulai']);
+        $this->assertEquals('2026-10-30', $found['tgl_selesai']);
+    }
+
+    /**
+     * Regression Test 2: Peminjaman ruangan lain pada rentang tanggal yang sama tidak dianggap bentrok.
+     */
+    public function test_other_room_during_same_period_is_allowed(): void
+    {
+        $aula = ItemJenis::where('nama', 'like', '%Aula Lantai 3%')->first();
+        $otherRoom = ItemJenis::where('nama', 'like', '%Ruang Rapat%')->first();
+        $this->assertNotNull($aula);
+        $this->assertNotNull($otherRoom);
+
+        // Peminjaman aktif pada Aula Lantai 3
+        $approved = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202610-098',
+            'id' => 'PMJ-202610-098',
+            'tgl_pengajuan' => '2026-10-15',
+            'nama_peminjam' => 'Panitia A',
+            'unit_kerja' => 'Unit A',
+            'mulai' => '2026-10-22 08:00:00',
+            'selesai' => '2026-10-30 15:00:00',
+            'tgl_mulai' => '2026-10-22',
+            'tgl_selesai' => '2026-10-30',
+            'keperluan' => 'Acara Pelatihan Aula',
+            'status' => 'Disetujui',
+        ]);
+        ItemPeminjaman::create([
+            'id_peminjaman' => $approved->id_peminjaman,
+            'item_id' => $aula->id,
+            'jumlah' => 1,
+        ]);
+
+        // Pengajuan untuk Ruang Rapat pada tanggal 26-28 Oktober harus sukses (201)
+        $payloadOther = [
+            'nama_peminjam' => 'Drs. H. Ahmad',
+            'unit_kerja' => 'Kepegawaian',
+            'mulai' => '2026-10-26 10:00:00',
+            'selesai' => '2026-10-28 12:00:00',
+            'keperluan' => 'Seleksi Berkas Administrasi',
+            'selected_items' => [
+                ['item_id' => $otherRoom->id, 'jumlah' => 1],
+            ],
+        ];
+
+        $resOther = $this->postJson('/api/peminjaman', $payloadOther);
+        $resOther->assertStatus(201)->assertJson(['success' => true]);
+    }
+
+    /**
+     * Regression Test 3: Jadwal yang benar-benar tidak bertumpang tindih diperbolehkan.
+     */
+    public function test_non_overlapping_schedule_is_allowed(): void
+    {
+        $aula = ItemJenis::where('nama', 'like', '%Aula Lantai 3%')->first();
+
+        // Peminjaman aktif 22-30 Oktober
+        $approved = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202610-097',
+            'id' => 'PMJ-202610-097',
+            'tgl_pengajuan' => '2026-10-15',
+            'nama_peminjam' => 'Panitia Bimtek',
+            'unit_kerja' => 'Bimas Islam',
+            'mulai' => '2026-10-22 08:00:00',
+            'selesai' => '2026-10-30 15:00:00',
+            'keperluan' => 'Bimtek Rutin',
+            'status' => 'Disetujui',
+        ]);
+        ItemPeminjaman::create([
+            'id_peminjaman' => $approved->id_peminjaman,
+            'item_id' => $aula->id,
+            'jumlah' => 1,
+        ]);
+
+        // Pengajuan setelah 30 Oktober (misal 31 Oktober 08:00 - 15:00) harus sukses (201)
+        $resAfter = $this->postJson('/api/peminjaman', [
+            'nama_peminjam' => 'Drs. H. Mulyono',
+            'unit_kerja' => 'Sekretariat',
+            'mulai' => '2026-10-31 08:00:00',
+            'selesai' => '2026-10-31 15:00:00',
+            'keperluan' => 'Rapat Evaluasi Bulanan',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ]);
+        $resAfter->assertStatus(201)->assertJson(['success' => true]);
+    }
+
+    /**
+     * Regression Test 4: Pembatalan peminjaman membebaskan ketersediaan ruangan.
+     */
+    public function test_cancelled_booking_frees_availability(): void
+    {
+        $aula = ItemJenis::where('nama', 'like', '%Aula Lantai 3%')->first();
+
+        // 1. Buat peminjaman aktif yang kemudian Dibatalkan
+        $cancelled = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202610-096',
+            'id' => 'PMJ-202610-096',
+            'tgl_pengajuan' => '2026-10-15',
+            'nama_peminjam' => 'Pemohon Batal',
+            'unit_kerja' => 'Unit Terkait',
+            'mulai' => '2026-10-22 08:00:00',
+            'selesai' => '2026-10-30 15:00:00',
+            'keperluan' => 'Acara yang dibatalkan',
+            'status' => 'Dibatalkan',
+        ]);
+        ItemPeminjaman::create([
+            'id_peminjaman' => $cancelled->id_peminjaman,
+            'item_id' => $aula->id,
+            'jumlah' => 1,
+        ]);
+
+        // 2. Karena status Dibatalkan, pengajuan pada rentang 26-28 Oktober harus sukses (201)
+        $resNew = $this->postJson('/api/peminjaman', [
+            'nama_peminjam' => 'Drs. H. Subarjo',
+            'unit_kerja' => 'Keuangan',
+            'mulai' => '2026-10-26 10:00:00',
+            'selesai' => '2026-10-28 12:00:00',
+            'keperluan' => 'Verifikasi Anggaran Akhir Tahun',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ]);
+        $resNew->assertStatus(201)->assertJson(['success' => true]);
+    }
+
+    /**
+     * Regression Test 5: Perbandingan batas waktu pada hari yang sama.
+     */
+    public function test_same_day_boundary_conditions(): void
+    {
+        $room = ItemJenis::where('nama', 'like', '%Ruang Rapat%')->first();
+
+        // Peminjaman disetujui jam 08:00 - 12:00
+        $approved = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202611-050',
+            'id' => 'PMJ-202611-050',
+            'tgl_pengajuan' => '2026-11-01',
+            'nama_peminjam' => 'Pemohon Pagi',
+            'unit_kerja' => 'Unit Pagi',
+            'mulai' => '2026-11-12 08:00:00',
+            'selesai' => '2026-11-12 12:00:00',
+            'keperluan' => 'Rapat Pagi Koordinasi',
+            'status' => 'Disetujui',
+        ]);
+        ItemPeminjaman::create([
+            'id_peminjaman' => $approved->id_peminjaman,
+            'item_id' => $room->id,
+            'jumlah' => 1,
+        ]);
+
+        // Tepat di batas akhir (12:00 - 15:00) TIDAK BENTROK -> harus berhasil
+        $resBoundary = $this->postJson('/api/peminjaman', [
+            'nama_peminjam' => 'Pemohon Siang',
+            'unit_kerja' => 'Unit Siang',
+            'mulai' => '2026-11-12 12:00:00',
+            'selesai' => '2026-11-12 15:00:00',
+            'keperluan' => 'Sesi Siang Tepat Batas',
+            'selected_items' => [
+                ['item_id' => $room->id, 'jumlah' => 1],
+            ],
+        ]);
+        $resBoundary->assertStatus(201)->assertJson(['success' => true]);
+
+        // Bertumpang tindih sebagian (11:30 - 13:00) HARUS BENTROK -> 422
+        $resOverlap = $this->postJson('/api/peminjaman', [
+            'nama_peminjam' => 'Pemohon Nabrak',
+            'unit_kerja' => 'Unit Nabrak',
+            'mulai' => '2026-11-12 11:30:00',
+            'selesai' => '2026-11-12 13:00:00',
+            'keperluan' => 'Sesi Bertumpang Tindih',
+            'selected_items' => [
+                ['item_id' => $room->id, 'jumlah' => 1],
+            ],
+        ]);
+        $resOverlap->assertStatus(422)->assertJson(['success' => false]);
+    }
+
+    /**
+     * Regression Test 6: Peminjaman berulang hanya memblokir tanggal sesi aktualnya.
+     */
+    public function test_recurring_booking_only_blocks_actual_session_dates(): void
+    {
+        $aula = ItemJenis::where('nama', 'like', '%Aula Lantai 3%')->first();
+
+        // Seri berulang tiap Senin: 2, 9, 16, 23 November 2026 (08:00 - 12:00)
+        $parent = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202611-REC-P',
+            'id' => 'PMJ-202611-REC-P',
+            'is_recurring' => true,
+            'recurring_frequency' => 'weekly',
+            'recurring_end_date' => '2026-11-23',
+            'tgl_pengajuan' => '2026-10-30',
+            'nama_peminjam' => 'Pengajian Rutin Senin',
+            'unit_kerja' => 'Bimas Islam',
+            'mulai' => '2026-11-02 08:00:00',
+            'selesai' => '2026-11-02 12:00:00',
+            'tgl_mulai' => '2026-11-02',
+            'tgl_selesai' => '2026-11-02',
+            'keperluan' => 'Kajian Rutin Senin Pagi',
+            'status' => 'Disetujui',
+        ]);
+        ItemPeminjaman::create(['id_peminjaman' => $parent->id_peminjaman, 'item_id' => $aula->id, 'jumlah' => 1]);
+
+        $child1 = Peminjaman::create([
+            'id_peminjaman' => 'PMJ-202611-REC-C1',
+            'id' => 'PMJ-202611-REC-C1',
+            'parent_id' => 'PMJ-202611-REC-P',
+            'is_recurring' => true,
+            'recurring_frequency' => 'weekly',
+            'recurring_end_date' => '2026-11-23',
+            'tgl_pengajuan' => '2026-10-30',
+            'nama_peminjam' => 'Pengajian Rutin Senin',
+            'unit_kerja' => 'Bimas Islam',
+            'mulai' => '2026-11-09 08:00:00',
+            'selesai' => '2026-11-09 12:00:00',
+            'tgl_mulai' => '2026-11-09',
+            'tgl_selesai' => '2026-11-09',
+            'keperluan' => 'Kajian Rutin Senin Pagi',
+            'status' => 'Disetujui',
+        ]);
+        ItemPeminjaman::create(['id_peminjaman' => $child1->id_peminjaman, 'item_id' => $aula->id, 'jumlah' => 1]);
+
+        // Hari Selasa (3 November 2026) BUKAN hari sesi -> HARUS BERHASIL (201)
+        $resTuesday = $this->postJson('/api/peminjaman', [
+            'nama_peminjam' => 'Acara Selasa Bebas',
+            'unit_kerja' => 'Madrasah',
+            'mulai' => '2026-11-03 08:00:00',
+            'selesai' => '2026-11-03 12:00:00',
+            'keperluan' => 'Sosialisasi KSM Selasa',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ]);
+        $resTuesday->assertStatus(201)->assertJson(['success' => true]);
+
+        // Hari Senin berikutnya (9 November 2026 09:00 - 11:00) MERUPAKAN hari sesi -> HARUS BENTROK (422)
+        $resMondayConflict = $this->postJson('/api/peminjaman', [
+            'nama_peminjam' => 'Acara Senin Bentrok',
+            'unit_kerja' => 'Madrasah',
+            'mulai' => '2026-11-09 09:00:00',
+            'selesai' => '2026-11-09 11:00:00',
+            'keperluan' => 'Acara yang menabrak pengajian',
+            'selected_items' => [
+                ['item_id' => $aula->id, 'jumlah' => 1],
+            ],
+        ]);
+        $resMondayConflict->assertStatus(422)->assertJson(['success' => false]);
     }
 }
