@@ -177,4 +177,64 @@ describe('Ajukan Submit Helper (ajukanSubmit.ts)', () => {
     );
     expect(axios.post).not.toHaveBeenCalled();
   });
+
+  it('submits external applicant without NIP as null in JSON', async () => {
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: { success: true, data: { id_peminjaman: 'PMJ-EXT-001' } },
+    });
+
+    const form: FormPeminjamanState = {
+      applicant_type: 'external',
+      pihak_pemohon: 'Eksternal (Madrasah/KUA/Lainnya)',
+      nip: '',
+      nama_peminjam: 'Siti Maryam',
+      unit_kerja: 'MTs Negeri 1',
+      nomor_hp: '08123456789',
+      mulai: '2026-10-15T08:00',
+      selesai: '2026-10-15T16:00',
+      keperluan: 'Kegiatan Eksternal',
+      surat_peminjaman_name: 'surat.pdf',
+      selected_items: [],
+    };
+
+    const res = await submitPeminjaman(form, null);
+    expect(res.id_peminjaman).toBe('PMJ-EXT-001');
+    expect(axios.post).toHaveBeenCalledWith(
+      '/api/peminjaman',
+      expect.objectContaining({
+        applicant_type: 'external',
+        nip: null,
+      })
+    );
+  });
+
+  it('submits external applicant with valid NIP preserving the NIP value', async () => {
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: { success: true, data: { id_peminjaman: 'PMJ-EXT-002' } },
+    });
+
+    const form: FormPeminjamanState = {
+      applicant_type: 'external',
+      pihak_pemohon: 'Eksternal (Madrasah/KUA/Lainnya)',
+      nip: '198005102005011002',
+      nama_peminjam: 'Drs. H. Maryono',
+      unit_kerja: 'MAN 1 Sleman',
+      nomor_hp: '08123456789',
+      mulai: '2026-10-15T08:00',
+      selesai: '2026-10-15T16:00',
+      keperluan: 'Pelatihan Guru',
+      surat_peminjaman_name: 'surat.pdf',
+      selected_items: [],
+    };
+
+    const res = await submitPeminjaman(form, null);
+    expect(res.id_peminjaman).toBe('PMJ-EXT-002');
+    expect(axios.post).toHaveBeenCalledWith(
+      '/api/peminjaman',
+      expect.objectContaining({
+        applicant_type: 'external',
+        nip: '198005102005011002',
+      })
+    );
+  });
 });

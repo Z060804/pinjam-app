@@ -33,8 +33,8 @@ export const submitPeminjaman = async (
     const formData = new FormData();
     formData.append('applicant_type', form.applicant_type);
     formData.append('pihak_pemohon', form.pihak_pemohon);
-    if (form.applicant_type === 'internal') {
-      formData.append('nip', form.nip);
+    if (form.nip && form.nip.trim()) {
+      formData.append('nip', form.nip.trim());
     }
     formData.append('nama_peminjam', form.nama_peminjam);
     formData.append('unit_kerja', form.unit_kerja);
@@ -87,7 +87,7 @@ export const submitPeminjaman = async (
 
   const response = await axios.post('/api/peminjaman', {
     ...form,
-    nip: form.applicant_type === 'internal' ? form.nip : null,
+    nip: form.nip && form.nip.trim() ? form.nip.trim() : null,
     surat_peminjaman_name: form.surat_peminjaman_name || null,
     mulai: normalizeDate(form.mulai),
     selesai: resolvedSelesai,
