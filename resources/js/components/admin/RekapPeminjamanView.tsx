@@ -92,9 +92,9 @@ export const RekapPeminjamanView: React.FC = () => {
     dibatalkan: groupedList.filter((p) => p.status === 'Dibatalkan').length,
   };
 
-  // Kalender tetap menggunakan data per-sesi individual lengkap
-  const approvedList = list.filter((p) => p.status === 'Disetujui');
-  const approvedEvents: MasterPeminjaman[] = approvedList.map((p) => ({
+  // Kalender menggunakan data per-sesi individual (Disetujui dan Dibatalkan agar status pembatalan tampil jelas)
+  const calendarList = list.filter((p) => p.status === 'Disetujui' || p.status === 'Dibatalkan');
+  const approvedEvents: MasterPeminjaman[] = calendarList.map((p) => ({
     ...p,
     id_peminjaman: p.id,
     nama_peminjam: p.nama_pemohon,
@@ -176,7 +176,7 @@ export const RekapPeminjamanView: React.FC = () => {
               </p>
             </div>
             <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full border border-emerald-200">
-              {approvedList.length} Jadwal Aktif
+              {calendarList.filter((p) => p.status === 'Disetujui').length} Jadwal Aktif
             </span>
           </div>
           <CalendarContainer events={approvedEvents} />

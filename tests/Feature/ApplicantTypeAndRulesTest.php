@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\ItemJenis;
-use App\Models\ItemPeminjaman;
 use App\Models\Peminjaman;
 use App\Models\User;
 use App\Services\BookingService;
@@ -1028,32 +1027,34 @@ class ApplicantTypeAndRulesTest extends TestCase
     }
 
     /**
-     * 30. Peminjaman multihari biasa hanya memblokir tanggal awal dan akhir; tanggal antara bebas dan dapat dipesan.
+     * 30. Peminjaman multihari: setiap tanggal dalam rentang merupakan sesi harian aktif
+     * yang mencegah bentrok waktu. Pembatalan sesi satu tanggal membebaskan interval sesi tersebut.
      */
     public function test_30_multiday_normal_booking_leaves_intermediate_dates_free(): void
     {
         $room = $this->getAulaLantai3();
 
-        // 1. Simpan dan setujui peminjaman multihari: 26 Oktober s/d 29 Oktober (08:00 - 10:00)
-        $approvedMulti = Peminjaman::create([
-            'id_peminjaman' => 'PMJ-202610-MULTI-01',
-            'id' => 'PMJ-202610-MULTI-01',
-            'tgl_pengajuan' => '2026-10-20',
+        // 1. Ajukan peminjaman multihari: 26 Oktober s/d 29 Oktober (08:00 - 10:00)
+        $bookingRes = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198501012010011001',
             'nama_peminjam' => 'Panitia Multihari',
             'unit_kerja' => 'Kemenag Sleman',
+            'nomor_hp' => '081234567890',
             'mulai' => '2026-10-26 08:00:00',
             'selesai' => '2026-10-29 10:00:00',
-            'tgl_mulai' => '2026-10-26',
-            'tgl_selesai' => '2026-10-29',
-            'waktu_mulai' => '08:00',
-            'waktu_selesai' => '10:00',
-            'keperluan' => 'Kegiatan Pembukaan dan Penutupan',
-            'status' => 'Disetujui',
+            'keperluan' => 'Kegiatan Multihari 26-29 Okt',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
         ]);
-        ItemPeminjaman::create(['id_peminjaman' => $approvedMulti->id_peminjaman, 'item_id' => $room->id, 'jumlah' => 1]);
+        $bookingRes->assertStatus(201);
+        $rootId = $bookingRes->json('data.id_peminjaman');
 
-        // 2. Tanggal antara: 27 Oktober (08:00 - 12:00) -> HARUS BERHASIL (201)
-        $resDay27 = $this->postJson('/api/peminjaman', [
+        // Setujui seluruh sesi
+        Peminjaman::where('id', $rootId)->orWhere('parent_id', $rootId)->update(['status' => 'Disetujui']);
+
+        // 2. Tanggal tengah (27 Oktober 08:00-10:00) bentrok -> HARUS DITOLAK (422)
+        $resDay27Overlap = $this->postJson('/api/peminjaman', [
             'applicant_type' => 'internal',
             'pihak_pemohon' => 'Internal Kemenag Sleman',
             'nip' => '198501012010011001',
@@ -1061,43 +1062,33 @@ class ApplicantTypeAndRulesTest extends TestCase
             'unit_kerja' => 'Penma',
             'nomor_hp' => '081234567890',
             'mulai' => '2026-10-27 08:00:00',
-            'selesai' => '2026-10-27 12:00:00',
-            'keperluan' => 'Acara Bebas Tanggal 27',
+            'selesai' => '2026-10-27 10:00:00',
+            'keperluan' => 'Acara Bentrok Tanggal 27',
             'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
         ]);
-        $resDay27->assertStatus(201)->assertJson(['success' => true]);
+        $resDay27Overlap->assertStatus(422)->assertJson(['success' => false]);
 
-        // 3. Tanggal antara: 28 Oktober (08:00 - 12:00) -> HARUS BERHASIL (201)
-        $resDay28 = $this->postJson('/api/peminjaman', [
+        // 3. Batalkan sesi tanggal 27 Oktober secara spesifik
+        $session27 = Peminjaman::where('parent_id', $rootId)->where('tgl_mulai', '2026-10-27')->first();
+        $this->assertNotNull($session27);
+        $session27->update(['status' => 'Dibatalkan']);
+
+        // 4. Setelah sesi tanggal 27 dibatalkan, peminjaman tanggal 27 (08:00-10:00) -> HARUS BERHASIL (201)
+        $resDay27Free = $this->postJson('/api/peminjaman', [
             'applicant_type' => 'internal',
             'pihak_pemohon' => 'Internal Kemenag Sleman',
             'nip' => '198501012010011001',
-            'nama_peminjam' => 'Peminjam Tanggal Antara 28',
+            'nama_peminjam' => 'Peminjam Tanggal Antara 27 Bebas',
             'unit_kerja' => 'Penma',
             'nomor_hp' => '081234567890',
-            'mulai' => '2026-10-28 08:00:00',
-            'selesai' => '2026-10-28 12:00:00',
-            'keperluan' => 'Acara Bebas Tanggal 28',
+            'mulai' => '2026-10-27 08:00:00',
+            'selesai' => '2026-10-27 10:00:00',
+            'keperluan' => 'Acara Tanggal 27 Setelah Pembatalan',
             'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
         ]);
-        $resDay28->assertStatus(201)->assertJson(['success' => true]);
+        $resDay27Free->assertStatus(201)->assertJson(['success' => true]);
 
-        // 4. Tanggal awal (26 Oktober) jam bersentuhan batas (10:00 - 12:00) -> HARUS BERHASIL (201)
-        $resDay26Touch = $this->postJson('/api/peminjaman', [
-            'applicant_type' => 'internal',
-            'pihak_pemohon' => 'Internal Kemenag Sleman',
-            'nip' => '198501012010011001',
-            'nama_peminjam' => 'Peminjam Jam Bersentuhan',
-            'unit_kerja' => 'Penma',
-            'nomor_hp' => '081234567890',
-            'mulai' => '2026-10-26 10:00:00',
-            'selesai' => '2026-10-26 12:00:00',
-            'keperluan' => 'Sesi Siang Setelah Acara Pagi',
-            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
-        ]);
-        $resDay26Touch->assertStatus(201)->assertJson(['success' => true]);
-
-        // 5. Tanggal awal (26 Oktober) jam tumpang tindih (09:00 - 11:00) -> HARUS DITOLAK (422)
+        // 5. Tanggal 26 (sesi awal) tetap aktif dan menolak bentrok (08:00-10:00) -> 422
         $resDay26Overlap = $this->postJson('/api/peminjaman', [
             'applicant_type' => 'internal',
             'pihak_pemohon' => 'Internal Kemenag Sleman',
@@ -1106,7 +1097,7 @@ class ApplicantTypeAndRulesTest extends TestCase
             'unit_kerja' => 'Penma',
             'nomor_hp' => '081234567890',
             'mulai' => '2026-10-26 09:00:00',
-            'selesai' => '2026-10-26 11:00:00',
+            'selesai' => '2026-10-26 10:00:00',
             'keperluan' => 'Sesi yang menabrak jadwal lama',
             'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
         ]);

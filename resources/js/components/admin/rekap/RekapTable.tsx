@@ -82,8 +82,27 @@ export const RekapTable: React.FC<RekapTableProps> = ({
                         <p className="text-[11px] text-slate-500">
                           {p.recurring_frequency || 'Setiap Minggu'} • {p.waktu_mulai} – {p.waktu_selesai} WIB ({p.total_sessions} Sesi)
                         </p>
-                        {Boolean(p.cancelled_sessions_count && p.cancelled_sessions_count > 0) && (
+                        {p.status_summary && (
                           <span className="text-[10px] text-amber-700 font-medium block">
+                            {p.status_summary}
+                          </span>
+                        )}
+                      </div>
+                    ) : (p.booking_type === 'multiday' || Boolean(p.is_multiday) || Boolean(p.total_sessions && p.total_sessions > 1)) ? (
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-slate-900">
+                            {formatDate(p.tgl_mulai)} – {formatDate(p.tgl_selesai)}
+                          </span>
+                          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200">
+                            Peminjaman Multihari
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          {p.waktu_mulai} – {p.waktu_selesai} WIB ({p.total_sessions ?? 1} Sesi)
+                        </p>
+                        {p.status_summary && (
+                          <span className="text-[10px] text-teal-700 font-medium block">
                             {p.status_summary}
                           </span>
                         )}
@@ -193,9 +212,33 @@ export const RekapTable: React.FC<RekapTableProps> = ({
                             <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
                               {p.total_sessions ? `${p.total_sessions} Sesi` : (p.session_label ?? 'Berulang')}
                             </span>
-                            {Boolean(p.cancelled_sessions_count && p.cancelled_sessions_count > 0) && (
+                            {p.status_summary && (
                               <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                                {p.status_summary ?? `${p.active_sessions_count} aktif, ${p.cancelled_sessions_count} dibatalkan`}
+                                {p.status_summary}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (p.booking_type === 'multiday' || Boolean(p.is_multiday) || Boolean(p.total_sessions && p.total_sessions > 1)) ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-slate-800">
+                              {formatDate(p.tgl_mulai)} – {formatDate(p.tgl_selesai)}
+                            </span>
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200">
+                              Peminjaman Multihari
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-medium">
+                            {p.waktu_mulai} – {p.waktu_selesai} WIB
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {p.total_sessions ? `${p.total_sessions} Sesi` : 'Multihari'}
+                            </span>
+                            {p.status_summary && (
+                              <span className="text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                                {p.status_summary}
                               </span>
                             )}
                           </div>

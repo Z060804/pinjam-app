@@ -5,12 +5,10 @@ namespace Tests\Feature;
 use App\Models\ItemJenis;
 use App\Models\ItemPeminjaman;
 use App\Models\Peminjaman;
-use App\Models\PeminjamanItem;
 use App\Models\User;
-use Carbon\Carbon;
+use Database\Seeders\SimpruSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -20,9 +18,13 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
     use RefreshDatabase;
 
     protected User $admin;
+
     protected string $adminToken;
+
     protected ItemJenis $roomItem;
+
     protected ItemJenis $projectorItem;
+
     protected ItemJenis $vehicleItem;
 
     protected function setUp(): void
@@ -31,7 +33,7 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
         Storage::fake('local');
         Storage::fake('public');
 
-        $this->seed(\Database\Seeders\SimpruSeeder::class);
+        $this->seed(SimpruSeeder::class);
 
         $this->admin = User::firstOrCreate(
             ['email' => 'admin@kemenag.go.id'],
@@ -53,6 +55,7 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
     private function generateValidPdf(): UploadedFile
     {
         $content = "%PDF-1.4\n1 0 obj\n<< /Title (Test Surat) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
+
         return UploadedFile::fake()->createWithContent('surat_tugas.pdf', $content);
     }
 
@@ -98,8 +101,8 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
         ]);
 
         $response->assertStatus(422)
-                 ->assertJson(['success' => false])
-                 ->assertJsonPath('conflicts.0.item_id', $this->roomItem->id);
+            ->assertJson(['success' => false])
+            ->assertJsonPath('conflicts.0.item_id', $this->roomItem->id);
 
         $this->assertDatabaseMissing('peminjaman', [
             'nama_peminjam' => 'Pemohon Kedua',
@@ -186,8 +189,8 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
             'tgl_pengajuan' => '2026-11-01',
             'nama_peminjam' => 'Pemegang Ruangan',
             'unit_kerja' => 'Seksi Bimas',
-            'mulai' => '2026-11-22 08:00:00',
-            'selesai' => '2026-11-22 12:00:00',
+            'mulai' => '2026-11-24 08:00:00',
+            'selesai' => '2026-11-24 12:00:00',
             'keperluan' => 'Workshop IT',
             'status' => 'Disetujui',
         ]);
@@ -202,8 +205,8 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
         $response = $this->postJson('/api/peminjaman', [
             'nama_peminjam' => 'Pemohon Paket Multi Item',
             'unit_kerja' => 'Kepegawaian',
-            'mulai' => '2026-11-22 09:00:00',
-            'selesai' => '2026-11-22 11:00:00',
+            'mulai' => '2026-11-24 09:00:00',
+            'selesai' => '2026-11-24 11:00:00',
             'keperluan' => 'Seleksi PPPK',
             'selected_items' => [
                 ['item' => ['id' => $this->roomItem->id], 'jumlah' => 1],
@@ -212,8 +215,8 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
         ]);
 
         $response->assertStatus(422)
-                 ->assertJson(['success' => false])
-                 ->assertJsonPath('conflicts.0.item_id', $this->roomItem->id);
+            ->assertJson(['success' => false])
+            ->assertJsonPath('conflicts.0.item_id', $this->roomItem->id);
 
         // Entire transaction must rollback: neither room nor projector has records for this applicant
         $this->assertDatabaseMissing('peminjaman', [
@@ -275,21 +278,21 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
 
         // Admin approves Booking A -> Must succeed 200
         $resA = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
-                     ->patchJson("/api/peminjaman/{$bookingA->id_peminjaman}/status", [
-                         'status' => 'Disetujui',
-                         'petugas' => 'Petugas Verifikator',
-                     ]);
+            ->patchJson("/api/peminjaman/{$bookingA->id_peminjaman}/status", [
+                'status' => 'Disetujui',
+                'petugas' => 'Petugas Verifikator',
+            ]);
         $resA->assertStatus(200)
-             ->assertJsonPath('data.status', 'Disetujui');
+            ->assertJsonPath('data.status', 'Disetujui');
 
         // Admin attempts to approve competing Booking B -> Must be blocked 422!
         $resB = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
-                     ->patchJson("/api/peminjaman/{$bookingB->id_peminjaman}/status", [
-                         'status' => 'Disetujui',
-                         'petugas' => 'Petugas Verifikator',
-                     ]);
+            ->patchJson("/api/peminjaman/{$bookingB->id_peminjaman}/status", [
+                'status' => 'Disetujui',
+                'petugas' => 'Petugas Verifikator',
+            ]);
         $resB->assertStatus(422)
-             ->assertJson(['success' => false]);
+            ->assertJson(['success' => false]);
 
         // Verify database: Booking A is approved, Booking B remains pending
         $this->assertEquals('Disetujui', $bookingA->fresh()->status);
@@ -326,10 +329,10 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
 
         // Admin approves existing booking
         $this->withHeader('Authorization', "Bearer {$this->adminToken}")
-             ->patchJson("/api/peminjaman/{$existing->id_peminjaman}/status", [
-                 'status' => 'Disetujui',
-             ])
-             ->assertStatus(200);
+            ->patchJson("/api/peminjaman/{$existing->id_peminjaman}/status", [
+                'status' => 'Disetujui',
+            ])
+            ->assertStatus(200);
 
         // Concurrent public submission with valid PDF upload attempt
         $pdf = $this->generateValidPdf();
@@ -346,7 +349,7 @@ class ConcurrencyAndTransactionIntegrityTest extends TestCase
         ]);
 
         $resSubmit->assertStatus(422)
-                  ->assertJson(['success' => false]);
+            ->assertJson(['success' => false]);
 
         // Verify orphan file cleanup on conflict
         $storedFiles = Storage::disk('local')->allFiles('surat');

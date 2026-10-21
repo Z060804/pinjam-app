@@ -59,9 +59,15 @@ export function groupPermohonanForRekap(records: Permohonan[]): Permohonan[] {
       seriesStatus = 'Disetujui';
     } else if (activeSessions.length > 0 && activeSessions.every((s) => s.status === 'Menunggu Persetujuan')) {
       seriesStatus = 'Menunggu Persetujuan';
+    } else if (activeSessions.length > 0) {
+      seriesStatus = activeSessions[0].status;
     } else {
       seriesStatus = parentRecord.status;
     }
+
+    const isWeekly = Boolean(parentRecord.is_recurring && parentRecord.booking_type !== 'multiday');
+    const bookingType = parentRecord.booking_type || (isWeekly ? 'recurring' : (totalSessions > 1 ? 'multiday' : 'single'));
+    const isMultiday = bookingType === 'multiday';
 
     // Susun daftar sesi lengkap untuk ditampilkan di modal detail
     const schedulesList = sorted.map((s, idx) => ({
@@ -77,6 +83,7 @@ export function groupPermohonanForRekap(records: Permohonan[]): Permohonan[] {
       mulai: s.mulai,
       selesai: s.selesai,
       status: s.status,
+      computed_status: s.computed_status || s.status,
       is_parent: !s.parent_id || s.id === rootKey || s.id_peminjaman === rootKey,
       can_cancel: s.status !== 'Dibatalkan',
     }));
@@ -87,10 +94,13 @@ export function groupPermohonanForRekap(records: Permohonan[]): Permohonan[] {
       id_peminjaman: rootKey,
       parent_id: null,
       parent_registration_id: rootKey,
-      is_recurring: true,
-      recurring_frequency: parentRecord.recurring_frequency || 'Setiap Minggu',
-      recurring_end_date: lastSession.tgl_mulai || lastSession.mulai,
-      // Tanggal awal dan akhir adalah tanggal sesi pertama dan sesi terakhir yang sebenarnya
+      booking_type: bookingType,
+      is_multiday: isMultiday,
+      is_recurring: isWeekly,
+      is_series: true,
+      recurring_frequency: isWeekly ? (parentRecord.recurring_frequency || 'Setiap Minggu') : null,
+      recurring_end_date: isWeekly ? (lastSession.tgl_mulai || lastSession.mulai) : null,
+      // Tanggal awal dan akhir adalah rentang asli dari sesi pertama s/d sesi terakhir
       tgl_mulai: firstSession.tgl_mulai,
       tgl_selesai: lastSession.tgl_mulai,
       waktu_mulai: firstSession.waktu_mulai,
@@ -100,7 +110,7 @@ export function groupPermohonanForRekap(records: Permohonan[]): Permohonan[] {
       cancelled_sessions_count: cancelledCount,
       session_label: `${totalSessions} Sesi`,
       status: seriesStatus,
-      status_summary: cancelledCount > 0 ? `${activeCount} aktif, ${cancelledCount} dibatalkan` : null,
+      status_summary: cancelledCount > 0 ? `${activeCount} sesi aktif, ${cancelledCount} dibatalkan` : `${totalSessions} sesi aktif`,
       recurring_schedules: schedulesList,
     });
   }

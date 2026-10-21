@@ -47,10 +47,15 @@ export interface MasterPeminjaman {
   jenis?: 'ruangan' | 'kendaraan' | 'perlengkapan' | string;
   parent_id?: string | null;
   parent_registration_id?: string | null;
+  booking_type?: 'single' | 'multiday' | 'recurring' | string;
+  is_multiday?: boolean;
   is_recurring?: boolean;
+  is_series?: boolean;
   session_number?: number | null;
   total_sessions?: number | null;
   session_label?: string | null;
+  range_indicator?: 'Mulai' | 'Berlangsung' | 'Habis' | null;
+  computed_status?: string | null;
   next_session_date?: string | null;
   recurring_frequency?: string | null;
   recurring_end_date?: string | null;
@@ -67,6 +72,9 @@ export interface MasterPeminjaman {
     mulai: string;
     selesai: string;
     status: string;
+    computed_status?: string;
+    is_current_active?: boolean;
+    range_indicator?: 'Mulai' | 'Berlangsung' | 'Habis' | null;
     is_parent: boolean;
     can_cancel?: boolean;
   }>;

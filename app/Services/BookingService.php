@@ -51,13 +51,56 @@ class BookingService
     }
 
     /**
+     * Menghasilkan jadwal sesi harian dari tanggal mulai s/d tanggal selesai untuk peminjaman biasa multihari.
+     * Setiap tanggal pada rentang multihari menghasilkan satu sesi aktual dengan interval jam yang konsisten.
+     *
+     * @return array<int, array{index: int, date: string, mulai: string, selesai: string, tgl_mulai: string, tgl_selesai: string}>
+     */
+    public function generateDailySchedules(string $mulai, string $selesai): array
+    {
+        $m = Carbon::parse($mulai);
+        $s = Carbon::parse($selesai);
+
+        $startDate = $m->toDateString();
+        $endDate = $s->toDateString();
+
+        $waktuMulai = $m->format('H:i');
+        $waktuSelesai = $s->format('H:i');
+
+        $curr = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+
+        if ($end->lt($curr)) {
+            return [];
+        }
+
+        $schedules = [];
+        $count = 0;
+
+        while ($curr->lte($end) && $count < 60) {
+            $currDateStr = $curr->toDateString();
+            $schedules[] = [
+                'index' => $count + 1,
+                'date' => $currDateStr,
+                'mulai' => "{$currDateStr} {$waktuMulai}:00",
+                'selesai' => "{$currDateStr} {$waktuSelesai}:00",
+                'tgl_mulai' => $currDateStr,
+                'tgl_selesai' => $currDateStr,
+            ];
+
+            $curr->addDay();
+            $count++;
+        }
+
+        return $schedules;
+    }
+
+    /**
      * Menentukan sesi pemakaian aktif untuk peminjaman biasa (single day atau multihari).
      * Aturan SIMPRU:
      * - Peminjaman satu hari (tgl_mulai === tgl_selesai): 1 sesi pada tanggal tersebut.
-     * - Peminjaman biasa multihari (tgl_mulai !== tgl_selesai): BUKAN satu blok pemakaian kontinu.
-     *   Hanya tanggal mulai dan tanggal selesai yang menjadi sesi pemakaian aktif,
-     *   keduanya menggunakan interval jam yang sama sesuai input form (waktu_mulai s/d waktu_selesai).
-     *   Tanggal-tanggal di antara keduanya benar-benar kosong dan bebas dipesan.
+     * - Peminjaman biasa multihari (tgl_mulai !== tgl_selesai): setiap tanggal dari mulai s/d selesai
+     *   menghasilkan satu sesi harian aktual dengan interval jam yang konsisten.
      *
      * @return array<int, array{date: string, mulai: string, selesai: string, waktu_mulai: string, waktu_selesai: string}>
      */
@@ -84,22 +127,25 @@ class BookingService
             ];
         }
 
-        return [
-            [
-                'date' => $startDate,
-                'mulai' => "{$startDate} {$waktuMulai}:00",
-                'selesai' => "{$startDate} {$waktuSelesai}:00",
+        $sessions = [];
+        $curr = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+        $count = 0;
+
+        while ($curr->lte($end) && $count < 60) {
+            $currDateStr = $curr->toDateString();
+            $sessions[] = [
+                'date' => $currDateStr,
+                'mulai' => "{$currDateStr} {$waktuMulai}:00",
+                'selesai' => "{$currDateStr} {$waktuSelesai}:00",
                 'waktu_mulai' => $waktuMulai,
                 'waktu_selesai' => $waktuSelesai,
-            ],
-            [
-                'date' => $endDate,
-                'mulai' => "{$endDate} {$waktuMulai}:00",
-                'selesai' => "{$endDate} {$waktuSelesai}:00",
-                'waktu_mulai' => $waktuMulai,
-                'waktu_selesai' => $waktuSelesai,
-            ],
-        ];
+            ];
+            $curr->addDay();
+            $count++;
+        }
+
+        return $sessions;
     }
 
     /**
@@ -121,6 +167,19 @@ class BookingService
         $waktuSelesai = $booking->waktu_selesai
             ?: ($booking->selesai ? Carbon::parse($booking->selesai)->format('H:i') : '16:00');
 
+        // Jika booking memiliki child records terpisah atau merupakan child record, baris ini hanya mewakili tanggal sesinya sendiri
+        if ($booking->recurringSchedules()->exists() || ! empty($booking->parent_id)) {
+            return [
+                [
+                    'date' => $startDate,
+                    'mulai' => "{$startDate} {$waktuMulai}:00",
+                    'selesai' => "{$startDate} {$waktuSelesai}:00",
+                    'waktu_mulai' => $waktuMulai,
+                    'waktu_selesai' => $waktuSelesai,
+                ],
+            ];
+        }
+
         if (! $endDate || $startDate === $endDate) {
             return [
                 [
@@ -133,23 +192,26 @@ class BookingService
             ];
         }
 
-        // Peminjaman biasa multihari: hanya tanggal awal dan tanggal akhir yang menjadi sesi
-        return [
-            [
-                'date' => $startDate,
-                'mulai' => "{$startDate} {$waktuMulai}:00",
-                'selesai' => "{$startDate} {$waktuSelesai}:00",
+        // Untuk booking multihari legacy tanpa child records terpisah
+        $sessions = [];
+        $curr = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+        $count = 0;
+
+        while ($curr->lte($end) && $count < 60) {
+            $currDateStr = $curr->toDateString();
+            $sessions[] = [
+                'date' => $currDateStr,
+                'mulai' => "{$currDateStr} {$waktuMulai}:00",
+                'selesai' => "{$currDateStr} {$waktuSelesai}:00",
                 'waktu_mulai' => $waktuMulai,
                 'waktu_selesai' => $waktuSelesai,
-            ],
-            [
-                'date' => $endDate,
-                'mulai' => "{$endDate} {$waktuMulai}:00",
-                'selesai' => "{$endDate} {$waktuSelesai}:00",
-                'waktu_mulai' => $waktuMulai,
-                'waktu_selesai' => $waktuSelesai,
-            ],
-        ];
+            ];
+            $curr->addDay();
+            $count++;
+        }
+
+        return $sessions;
     }
 
     /**
@@ -189,7 +251,12 @@ class BookingService
             });
         });
 
-        $candidateBookings = $query->with(['items.item', 'itemPeminjaman.item'])->get();
+        $candidateBookings = $query->with([
+            'items.item',
+            'itemPeminjaman.item',
+            'parent.items.item',
+            'parent.itemPeminjaman.item',
+        ])->get();
 
         foreach ($items as $reqItem) {
             $itemId = (int) ($reqItem['item_id'] ?? $reqItem['item']['id'] ?? 0);
@@ -440,6 +507,7 @@ class BookingService
 
             $schedules = [];
             if ($isRecurring && $recurringEndDate) {
+                $bookingType = 'recurring';
                 $schedules = $this->generateWeeklySchedules(
                     $validated['mulai'],
                     $validated['selesai'],
@@ -453,7 +521,20 @@ class BookingService
                         'conflicts' => [],
                     ];
                 }
+            } elseif (substr($validated['mulai'], 0, 10) !== substr($validated['selesai'], 0, 10)) {
+                $bookingType = 'multiday';
+                $isRecurring = false;
+                $recurringFrequency = null;
+                $recurringEndDate = null;
+                $schedules = $this->generateDailySchedules(
+                    $validated['mulai'],
+                    $validated['selesai']
+                );
             } else {
+                $bookingType = 'single';
+                $isRecurring = false;
+                $recurringFrequency = null;
+                $recurringEndDate = null;
                 $tglMulai = substr($validated['mulai'], 0, 10);
                 $tglSelesai = substr($validated['selesai'], 0, 10);
                 $schedules = [
@@ -529,6 +610,7 @@ class BookingService
                 'id' => $parentNewId,
                 'parent_id' => null,
                 'is_recurring' => $isRecurring,
+                'booking_type' => $bookingType,
                 'recurring_frequency' => $isRecurring ? $recurringFrequency : null,
                 'recurring_end_date' => $isRecurring ? $recurringEndDate : null,
                 'tgl_pengajuan' => $now->toDateString(),
@@ -572,8 +654,8 @@ class BookingService
                 }
             }
 
-            // Jika permohonan berulang, buat jadwal turunan untuk pertemuan ke-2 sampai selesai
-            if ($isRecurring && count($schedules) > 1) {
+            // Jika permohonan memiliki banyak jadwal (baik berulang mingguan maupun multihari), buat sesi turunan
+            if (count($schedules) > 1) {
                 for ($i = 1; $i < count($schedules); $i++) {
                     $childSched = $schedules[$i];
                     $childId = $this->generateNextId($now);
@@ -584,9 +666,10 @@ class BookingService
                         'id_peminjaman' => $childId,
                         'id' => $childId,
                         'parent_id' => $parentNewId,
-                        'is_recurring' => true,
-                        'recurring_frequency' => $recurringFrequency,
-                        'recurring_end_date' => $recurringEndDate,
+                        'is_recurring' => $isRecurring,
+                        'booking_type' => $bookingType,
+                        'recurring_frequency' => $isRecurring ? $recurringFrequency : null,
+                        'recurring_end_date' => $isRecurring ? $recurringEndDate : null,
                         'tgl_pengajuan' => $now->toDateString(),
                         'nip' => $nipToStore,
                         'nama_peminjam' => $validated['nama_peminjam'],
@@ -609,24 +692,6 @@ class BookingService
                         'status' => 'Menunggu Persetujuan',
                         'petugas' => null,
                     ]);
-
-                    foreach ($itemsPayload as $item) {
-                        if (Schema::hasTable('item_peminjaman')) {
-                            ItemPeminjaman::create([
-                                'id_peminjaman' => $childId,
-                                'item_id' => $item['item_id'],
-                                'jumlah' => $item['jumlah'],
-                            ]);
-                        }
-
-                        if (Schema::hasTable('peminjaman_items')) {
-                            PeminjamanItem::create([
-                                'peminjaman_id' => $childId,
-                                'item_id' => $item['item_id'],
-                                'jumlah' => $item['jumlah'],
-                            ]);
-                        }
-                    }
                 }
             }
 
@@ -639,7 +704,7 @@ class BookingService
 
     /**
      * Persetujuan peminjaman oleh admin dengan validasi ulang konflik ketersediaan & row lock.
-     * Otomatis memvalidasi dan menyetujui seluruh jadwal jika merupakan seri peminjaman berulang.
+     * Otomatis memvalidasi dan menyetujui seluruh jadwal jika merupakan seri peminjaman berulang atau multihari.
      */
     public function approvePeminjaman(Peminjaman $peminjaman, ?string $petugas = null): array
     {
@@ -648,7 +713,7 @@ class BookingService
             : $peminjaman;
 
         $allToApprove = collect([$root]);
-        if ($root->is_recurring && $root->recurringSchedules()->exists()) {
+        if ($root->recurringSchedules()->exists()) {
             $allToApprove = $allToApprove->concat($root->recurringSchedules);
         }
         $allToApprove = $allToApprove->filter(fn ($rec) => $rec->status !== 'Dibatalkan');
@@ -710,12 +775,130 @@ class BookingService
 
     /**
      * Ambil daftar item gabungan unik dari items dan itemPeminjaman (menjamin kompatibilitas historis).
+     * Sesi anak secara otomatis mewarisi item dari pengajuan induk tanpa menduplikasi pivot tabel.
      */
     public function consolidateItems(Peminjaman $peminjaman): Collection
     {
         $allItems = $peminjaman->items->concat($peminjaman->itemPeminjaman)->filter(fn ($it) => ! empty($it->item_id));
 
+        if ($allItems->isEmpty() && ! empty($peminjaman->parent_id)) {
+            $parent = $peminjaman->relationLoaded('parent')
+                ? $peminjaman->parent
+                : Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
+                    ->where('id_peminjaman', $peminjaman->parent_id)
+                    ->orWhere('id', $peminjaman->parent_id)
+                    ->first();
+
+            if ($parent) {
+                $allItems = $parent->items->concat($parent->itemPeminjaman)->filter(fn ($it) => ! empty($it->item_id));
+            }
+        }
+
         return $allItems->unique(fn ($it) => (int) $it->item_id)->values();
+    }
+
+    /**
+     * Memastikan peminjaman multihari legacy memiliki record sesi harian anak
+     * tanpa menduplikasi data atau pivot tabel item_peminjaman.
+     */
+    public function ensureMultidayChildSessions(Peminjaman $peminjaman): int
+    {
+        if (! empty($peminjaman->parent_id) || (bool) $peminjaman->is_recurring) {
+            return 0;
+        }
+
+        $startDate = $peminjaman->tgl_mulai ?: ($peminjaman->mulai ? substr((string) $peminjaman->mulai, 0, 10) : null);
+        $endDate = $peminjaman->tgl_selesai ?: ($peminjaman->selesai ? substr((string) $peminjaman->selesai, 0, 10) : $startDate);
+
+        if (! $startDate || ! $endDate || $startDate === $endDate) {
+            return 0;
+        }
+
+        if ($peminjaman->recurringSchedules()->exists()) {
+            return 0;
+        }
+
+        $mulaiStr = $peminjaman->mulai ?: ($startDate.' '.($peminjaman->waktu_mulai ?: '08:00'));
+        $selesaiStr = $peminjaman->selesai ?: ($endDate.' '.($peminjaman->waktu_selesai ?: '16:00'));
+
+        $schedules = $this->generateDailySchedules($mulaiStr, $selesaiStr);
+        if (count($schedules) <= 1) {
+            return 0;
+        }
+
+        $parentId = $peminjaman->id_peminjaman ?? $peminjaman->id;
+
+        $created = DB::transaction(function () use ($parentId, $startDate, $endDate) {
+            $parentLocked = Peminjaman::where('id', $parentId)
+                ->orWhere('id_peminjaman', $parentId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $parentLocked || $parentLocked->recurringSchedules()->exists()) {
+                return 0;
+            }
+
+            $mulaiStr = $parentLocked->mulai ?: ($startDate.' '.($parentLocked->waktu_mulai ?: '08:00'));
+            $selesaiStr = $parentLocked->selesai ?: ($endDate.' '.($parentLocked->waktu_selesai ?: '16:00'));
+
+            $schedules = $this->generateDailySchedules($mulaiStr, $selesaiStr);
+            if (count($schedules) <= 1) {
+                return 0;
+            }
+
+            $now = Carbon::now();
+            $createdCount = 0;
+
+            $parentLocked->booking_type = 'multiday';
+            $parentLocked->is_recurring = false;
+            $parentLocked->save();
+
+            for ($i = 1; $i < count($schedules); $i++) {
+                $childSched = $schedules[$i];
+                $childId = $this->generateNextId($now);
+                $cWaktuMulai = strlen($childSched['mulai']) >= 16 ? substr($childSched['mulai'], 11, 5) : ($parentLocked->waktu_mulai ?: '08:00');
+                $cWaktuSelesai = strlen($childSched['selesai']) >= 16 ? substr($childSched['selesai'], 11, 5) : ($parentLocked->waktu_selesai ?: '16:00');
+
+                Peminjaman::create([
+                    'id_peminjaman' => $childId,
+                    'id' => $childId,
+                    'parent_id' => $parentId,
+                    'is_recurring' => false,
+                    'booking_type' => 'multiday',
+                    'recurring_frequency' => null,
+                    'recurring_end_date' => null,
+                    'tgl_pengajuan' => $parentLocked->tgl_pengajuan ?? $now->toDateString(),
+                    'nip' => $parentLocked->nip,
+                    'nama_peminjam' => $parentLocked->nama_peminjam,
+                    'nama_pemohon' => $parentLocked->nama_pemohon ?? $parentLocked->nama_peminjam,
+                    'unit_kerja' => $parentLocked->unit_kerja,
+                    'unit_pemohon' => $parentLocked->unit_pemohon ?? $parentLocked->unit_kerja,
+                    'pihak_pemohon' => $parentLocked->pihak_pemohon,
+                    'nomor_hp' => $parentLocked->nomor_hp,
+                    'penanggung_jawab' => $parentLocked->penanggung_jawab,
+                    'jumlah_peserta' => $parentLocked->jumlah_peserta ?: 1,
+                    'mulai' => $childSched['mulai'],
+                    'selesai' => $childSched['selesai'],
+                    'tgl_mulai' => $childSched['tgl_mulai'],
+                    'tgl_selesai' => $childSched['tgl_selesai'],
+                    'waktu_mulai' => $cWaktuMulai,
+                    'waktu_selesai' => $cWaktuSelesai,
+                    'keperluan' => $parentLocked->keperluan,
+                    'surat_peminjaman' => $parentLocked->surat_peminjaman,
+                    'surat_url' => $parentLocked->surat_url,
+                    'status' => $parentLocked->status,
+                    'petugas' => $parentLocked->petugas,
+                ]);
+
+                $createdCount++;
+            }
+
+            return $createdCount;
+        });
+
+        $peminjaman->refresh();
+
+        return $created;
     }
 
     /**

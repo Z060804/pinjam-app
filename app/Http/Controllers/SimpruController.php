@@ -159,7 +159,12 @@ class SimpruController extends Controller
             $isAdmin = true;
         }
 
-        $records = Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
+        $records = Peminjaman::with([
+            'items.item.jenis',
+            'itemPeminjaman.item.jenis',
+            'parent.items.item.jenis',
+            'parent.itemPeminjaman.item.jenis',
+        ])
             ->orderBy('tgl_mulai', 'asc')
             ->orderBy('waktu_mulai', 'asc')
             ->orderBy('created_at', 'desc')
@@ -214,15 +219,49 @@ class SimpruController extends Controller
 
             $rootKey = $p->parent_id ?: ($p->id_peminjaman ?? $p->id);
             $group = $seriesGroups->get($rootKey, collect([$p]));
-            $isSeries = (bool) $p->is_recurring || ! empty($p->parent_id) || $group->count() > 1;
+            $isWeeklyRecurring = (bool) $p->is_recurring && (bool) $p->recurring_frequency;
             $sortedGroup = $group->sortBy('tgl_mulai')->values();
             $currId = $p->id_peminjaman ?? $p->id;
             $sessionIdx = $sortedGroup->search(fn ($it) => ($it->id_peminjaman ?? $it->id) === $currId);
             $sessionNumber = $sessionIdx !== false ? $sessionIdx + 1 : 1;
             $totalSessions = $sortedGroup->count();
+            $isSeries = $totalSessions > 1 || ! empty($p->parent_id) || $isWeeklyRecurring;
+
+            // Pembeda eksplisit jenis booking: recurring, multiday, atau single
+            $bookingType = $p->booking_type ?: ($isWeeklyRecurring ? 'recurring' : ($totalSessions > 1 ? 'multiday' : 'single'));
+            $isMultiday = ($bookingType === 'multiday');
+
             $nextSession = $sortedGroup->first(function ($it) use ($p) {
                 return $it->tgl_mulai > $p->tgl_mulai && $it->status !== 'Dibatalkan';
             });
+
+            // Penanda rentang untuk peminjaman multihari: Mulai (awal), Berlangsung (tengah), Habis (akhir)
+            $rangeIndicator = null;
+            if ($isMultiday && $totalSessions > 1) {
+                if ($sessionNumber === 1) {
+                    $rangeIndicator = 'Mulai';
+                } elseif ($sessionNumber === $totalSessions) {
+                    $rangeIndicator = 'Habis';
+                } else {
+                    $rangeIndicator = 'Berlangsung';
+                }
+            }
+
+            // Status operasional dinamis berbasis waktu zona Asia/Jakarta
+            $computedStatus = $p->status;
+            if ($p->status === 'Disetujui' && $p->mulai && $p->selesai) {
+                $nowJkt = Carbon::now('Asia/Jakarta');
+                $mulaiJkt = Carbon::parse($p->mulai, 'Asia/Jakarta');
+                $selesaiJkt = Carbon::parse($p->selesai, 'Asia/Jakarta');
+
+                if ($nowJkt->lt($mulaiJkt)) {
+                    $computedStatus = 'Disetujui';
+                } elseif ($nowJkt->between($mulaiJkt, $selesaiJkt)) {
+                    $computedStatus = 'Berlangsung';
+                } else {
+                    $computedStatus = 'Selesai';
+                }
+            }
 
             return [
                 'id' => $p->id_peminjaman ?? $p->id,
@@ -248,11 +287,16 @@ class SimpruController extends Controller
                 'kegiatan' => $keperluanDisplay,
                 'keperluan' => $keperluanDisplay,
                 'status' => $p->status,
+                'computed_status' => $computedStatus,
                 'surat_url' => $isAdmin ? ($p->surat_url ?? $p->surat_peminjaman) : null,
                 'surat_peminjaman' => $isAdmin ? ($p->surat_peminjaman ?? $p->surat_url) : null,
                 'parent_id' => $p->parent_id,
                 'parent_registration_id' => $rootKey,
-                'is_recurring' => $isSeries,
+                'booking_type' => $bookingType,
+                'is_multiday' => $isMultiday,
+                'is_recurring' => $isWeeklyRecurring,
+                'is_series' => $isSeries,
+                'range_indicator' => $rangeIndicator,
                 'session_number' => $isSeries ? $sessionNumber : null,
                 'total_sessions' => $isSeries ? $totalSessions : null,
                 'session_label' => $isSeries ? "Sesi {$sessionNumber} dari {$totalSessions}" : null,
@@ -345,21 +389,33 @@ class SimpruController extends Controller
         $parentObj = $peminjaman->parent_id
             ? (Peminjaman::where('id_peminjaman', $peminjaman->parent_id)->orWhere('id', $peminjaman->parent_id)->first() ?: $peminjaman)
             : $peminjaman;
-        $isRecurringSeries = false;
+        $isWeeklyRecurring = (bool) $parentObj->is_recurring && (bool) $parentObj->recurring_frequency;
+        $isSeries = false;
         $sessionNumber = 1;
         $totalSessions = 1;
         $nextSessionDate = null;
+        $bookingType = 'single';
+        $isMultiday = false;
 
         if ($parentObj) {
+            // Jika record multihari legacy belum memiliki child records, backfill sesi secara aman
+            if (! $isWeeklyRecurring && empty($parentObj->parent_id) && $parentObj->tgl_mulai !== $parentObj->tgl_selesai) {
+                $this->bookingService->ensureMultidayChildSessions($parentObj);
+                $parentObj->refresh();
+            }
+
             $allInSeries = Peminjaman::where('id_peminjaman', $parentObj->id_peminjaman)
                 ->orWhere('id', $parentObj->id_peminjaman)
                 ->orWhere('parent_id', $parentObj->id_peminjaman)
                 ->orderBy('tgl_mulai', 'asc')
                 ->get();
 
-            if ($allInSeries->count() > 1 || (bool) $parentObj->is_recurring || ! empty($peminjaman->parent_id)) {
-                $isRecurringSeries = true;
-                $totalSessions = $allInSeries->count();
+            $totalSessions = $allInSeries->count();
+            $bookingType = $parentObj->booking_type ?: ($isWeeklyRecurring ? 'recurring' : ($totalSessions > 1 ? 'multiday' : 'single'));
+            $isMultiday = ($bookingType === 'multiday');
+            $isSeries = $totalSessions > 1 || ! empty($peminjaman->parent_id) || $isWeeklyRecurring;
+
+            if ($isSeries) {
                 $currId = $peminjaman->id_peminjaman ?? $peminjaman->id;
                 $sIdx = $allInSeries->search(fn ($s) => ($s->id_peminjaman ?? $s->id) === $currId);
                 $sessionNumber = $sIdx !== false ? $sIdx + 1 : 1;
@@ -368,10 +424,43 @@ class SimpruController extends Controller
                 });
                 $nextSessionDate = $nextS ? Carbon::parse($nextS->tgl_mulai)->format('Y-m-d') : null;
 
-                $recurringSchedules = $allInSeries->map(function ($s, $idx) use ($parentObj, $totalSessions) {
+                $nowJkt = Carbon::now('Asia/Jakarta');
+
+                $recurringSchedules = $allInSeries->map(function ($s, $idx) use ($parentObj, $totalSessions, $isMultiday, $nowJkt) {
                     $sMulaiStr = $s->tgl_mulai ? Carbon::parse($s->tgl_mulai)->format('Y-m-d') : substr((string) $s->mulai, 0, 10);
                     $sWaktuMulai = $s->waktu_mulai ?: (strlen((string) $s->mulai) >= 16 ? substr((string) $s->mulai, 11, 5) : '08:00');
                     $sWaktuSelesai = $s->waktu_selesai ?: (strlen((string) $s->selesai) >= 16 ? substr((string) $s->selesai, 11, 5) : '16:00');
+
+                    $fullMulaiStr = $s->mulai ?: ($sMulaiStr.' '.$sWaktuMulai);
+                    $fullSelesaiStr = $s->selesai ?: ($sMulaiStr.' '.$sWaktuSelesai);
+
+                    // Status operasional dinamis berbasis waktu zona Asia/Jakarta
+                    $computedStatus = $s->status;
+                    $isCurrentActive = false;
+                    if ($s->status === 'Disetujui' && $fullMulaiStr && $fullSelesaiStr) {
+                        $sMulaiJkt = Carbon::parse($fullMulaiStr, 'Asia/Jakarta');
+                        $sSelesaiJkt = Carbon::parse($fullSelesaiStr, 'Asia/Jakarta');
+
+                        if ($nowJkt->lt($sMulaiJkt)) {
+                            $computedStatus = 'Disetujui';
+                        } elseif ($nowJkt->between($sMulaiJkt, $sSelesaiJkt)) {
+                            $computedStatus = 'Berlangsung';
+                            $isCurrentActive = true;
+                        } else {
+                            $computedStatus = 'Selesai';
+                        }
+                    }
+
+                    $rangeInd = null;
+                    if ($isMultiday && $totalSessions > 1) {
+                        if ($idx === 0) {
+                            $rangeInd = 'Mulai';
+                        } elseif ($idx === $totalSessions - 1) {
+                            $rangeInd = 'Habis';
+                        } else {
+                            $rangeInd = 'Berlangsung';
+                        }
+                    }
 
                     return [
                         'index' => $idx + 1,
@@ -383,9 +472,12 @@ class SimpruController extends Controller
                         'tgl_mulai' => $sMulaiStr,
                         'waktu_mulai' => $sWaktuMulai,
                         'waktu_selesai' => $sWaktuSelesai,
-                        'mulai' => $s->mulai ?: ($sMulaiStr.' '.$sWaktuMulai),
-                        'selesai' => $s->selesai ?: ($sMulaiStr.' '.$sWaktuSelesai),
+                        'mulai' => $fullMulaiStr,
+                        'selesai' => $fullSelesaiStr,
                         'status' => $s->status,
+                        'computed_status' => $computedStatus,
+                        'is_current_active' => $isCurrentActive,
+                        'range_indicator' => $rangeInd,
                         'is_parent' => ($s->id_peminjaman === $parentObj->id_peminjaman || $s->id === $parentObj->id),
                         'can_cancel' => $s->status !== 'Dibatalkan',
                     ];
@@ -418,7 +510,25 @@ class SimpruController extends Controller
             'surat_peminjaman' => ($isAdmin && $hasRealSurat) ? ($peminjaman->surat_peminjaman ?? $peminjaman->surat_url) : null,
             'surat_terlampir' => $hasRealSurat,
             'is_public_view' => ! $isAdmin,
-            'status' => $peminjaman->status,
+            'status' => (function () use ($isSeries, $allInSeries, $peminjaman) {
+                if (! $isSeries || empty($allInSeries)) {
+                    return $peminjaman->status;
+                }
+                $allCancelled = $allInSeries->every(fn ($s) => $s->status === 'Dibatalkan');
+                if ($allCancelled) {
+                    return 'Dibatalkan';
+                }
+                $activeSessions = $allInSeries->filter(fn ($s) => $s->status !== 'Dibatalkan');
+                if ($activeSessions->isNotEmpty() && $activeSessions->every(fn ($s) => $s->status === 'Disetujui')) {
+                    return 'Disetujui';
+                }
+                if ($activeSessions->isNotEmpty() && $activeSessions->every(fn ($s) => $s->status === 'Menunggu Persetujuan')) {
+                    return 'Menunggu Persetujuan';
+                }
+
+                return $activeSessions->first()->status ?? $peminjaman->status;
+            })(),
+            'session_status' => $peminjaman->status,
             'petugas' => $peminjaman->petugas,
             'jenis' => $jenisName,
             'kategori_list' => $kategoriList,
@@ -427,10 +537,13 @@ class SimpruController extends Controller
             'ruangan' => $itemNames ?: 'Sarana Prasarana',
             'parent_id' => $peminjaman->parent_id,
             'parent_registration_id' => $parentObj?->id_peminjaman ?? ($parentObj?->id ?? $peminjaman->id_peminjaman),
-            'is_recurring' => $isRecurringSeries,
-            'session_number' => $isRecurringSeries ? $sessionNumber : null,
-            'total_sessions' => $isRecurringSeries ? $totalSessions : null,
-            'session_label' => $isRecurringSeries ? "Sesi {$sessionNumber} dari {$totalSessions}" : null,
+            'booking_type' => $bookingType,
+            'is_multiday' => $isMultiday,
+            'is_recurring' => $isWeeklyRecurring,
+            'is_series' => $isSeries,
+            'session_number' => $isSeries ? $sessionNumber : null,
+            'total_sessions' => $isSeries ? $totalSessions : null,
+            'session_label' => $isSeries ? "Sesi {$sessionNumber} dari {$totalSessions}" : null,
             'next_session_date' => $nextSessionDate,
             'recurring_frequency' => $peminjaman->recurring_frequency,
             'recurring_end_date' => $peminjaman->recurring_end_date ? Carbon::parse($peminjaman->recurring_end_date)->format('Y-m-d') : null,
@@ -690,7 +803,7 @@ class SimpruController extends Controller
                 }
                 $rootParent->save();
 
-                if ($rootParent->is_recurring && $rootParent->recurringSchedules()->exists()) {
+                if ($rootParent->recurringSchedules()->exists()) {
                     foreach ($rootParent->recurringSchedules as $child) {
                         $child->status = $validated['status'];
                         $child->petugas = $petugasName;

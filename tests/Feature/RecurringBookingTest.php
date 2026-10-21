@@ -440,33 +440,34 @@ class RecurringBookingTest extends TestCase
         $record = Peminjaman::find($id);
         $this->assertNotNull($record);
         $this->assertFalse((bool) $record->is_recurring);
+        $this->assertEquals('multiday', $record->booking_type);
         $this->assertNull($record->parent_id);
         $this->assertEquals('2026-10-22 08:00:00', (string) $record->mulai);
-        $this->assertEquals('2026-10-30 16:00:00', (string) $record->selesai);
+        $this->assertEquals('2026-10-22 16:00:00', (string) $record->selesai);
 
-        // Pastikan tidak ada record turunan
+        // 22 s/d 30 Oktober: 9 hari (1 parent + 8 children)
         $childrenCount = Peminjaman::where('parent_id', $id)->count();
-        $this->assertEquals(0, $childrenCount);
+        $this->assertEquals(8, $childrenCount);
 
-        // Cek API detail: is_recurring harus false, recurring_schedules harus kosong
+        // Cek API detail: is_recurring harus false, booking_type = multiday, memiliki total 9 sesi
         $detailRes = $this->getJson("/api/peminjaman/{$id}");
         $detailRes->assertStatus(200)
             ->assertJson([
                 'success' => true,
                 'data' => [
                     'is_recurring' => false,
-                    'session_label' => null,
-                    'total_sessions' => null,
-                    'recurring_schedules' => [],
+                    'booking_type' => 'multiday',
+                    'total_sessions' => 9,
                 ],
             ]);
+        $this->assertCount(9, $detailRes->json('data.recurring_schedules'));
 
-        // Cek API list: is_recurring harus false, session_label harus null
+        // Cek API list: is_recurring harus false, booking_type = multiday
         $listRes = $this->getJson('/api/peminjaman');
         $item = collect($listRes->json('data'))->firstWhere('id', $id);
         $this->assertNotNull($item);
         $this->assertFalse($item['is_recurring']);
-        $this->assertNull($item['session_label']);
+        $this->assertEquals('multiday', $item['booking_type']);
     }
 
     /**
