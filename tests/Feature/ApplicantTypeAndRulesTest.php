@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\ItemJenis;
 use App\Models\Peminjaman;
 use App\Models\User;
+use App\Services\BookingService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -144,8 +146,8 @@ class ApplicantTypeAndRulesTest extends TestCase
             'nama_peminjam' => 'Drs. H. Ahmad Fauzi, M.Ag.',
             'unit_kerja' => 'Subbag Tata Usaha',
             'nomor_hp' => '081234567890',
-            'mulai' => '2026-11-22 08:00:00',
-            'selesai' => '2026-11-22 17:00:00',
+            'mulai' => '2026-11-20 08:00:00',
+            'selesai' => '2026-11-20 16:00:00',
             'keperluan' => 'Monitoring KUA Wilayah Barat',
             'selected_items' => [
                 ['item' => ['id' => $vehicle->id], 'jumlah' => 1],
@@ -170,8 +172,8 @@ class ApplicantTypeAndRulesTest extends TestCase
             'nama_peminjam' => 'Drs. H. Ahmad Fauzi, M.Ag.',
             'unit_kerja' => 'Seksi Penmad',
             'nomor_hp' => '081234567890',
-            'mulai' => '2026-11-22 08:00:00',
-            'selesai' => '2026-11-22 17:00:00',
+            'mulai' => '2026-11-20 08:00:00',
+            'selesai' => '2026-11-20 16:00:00',
             'keperluan' => 'Peminjaman LCD Projector',
             'selected_items' => [
                 ['item' => ['id' => $equipment->id], 'jumlah' => 1],
@@ -710,5 +712,395 @@ class ApplicantTypeAndRulesTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['selected_items']);
+    }
+
+    /**
+     * 22. Pengajuan pemohon eksternal tanpa NIP berhasil disimpan jika seluruh data wajib lain valid.
+     */
+    public function test_22_external_without_nip_succeeds_and_stores_null_nip(): void
+    {
+        $room = $this->getAulaLantai3();
+        $file = $this->createValidPdf('surat_eksternal_tanpa_nip.pdf');
+
+        $response = $this->post('/api/peminjaman', [
+            'applicant_type' => 'external',
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nip' => '', // string kosong harus ditangani konsisten menjadi null
+            'nama_peminjam' => 'Dra. Hj. Maryani',
+            'unit_kerja' => 'KUA Seyegan',
+            'nomor_hp' => '081398765432',
+            'mulai' => '2026-12-08 08:00:00',
+            'selesai' => '2026-12-08 12:00:00',
+            'keperluan' => 'Rakor KUA Se-Kabupaten Sleman',
+            'surat_file' => $file,
+            'selected_items' => json_encode([['item_id' => $room->id, 'jumlah' => 1]]),
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson(['success' => true]);
+
+        $id = $response->json('data.id_peminjaman');
+        $this->assertDatabaseHas('peminjaman', [
+            'id_peminjaman' => $id,
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nip' => null,
+        ]);
+    }
+
+    /**
+     * 23. Pengajuan pemohon eksternal yang memiliki dan mengisi NIP valid tetap tersimpan dengan benar.
+     */
+    public function test_23_external_with_valid_nip_succeeds_and_stores_nip(): void
+    {
+        $room = $this->getAulaLantai3();
+        $file = $this->createValidPdf('surat_eksternal_dengan_nip.pdf');
+
+        $response = $this->post('/api/peminjaman', [
+            'applicant_type' => 'external',
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nip' => '198005102005011002',
+            'nama_peminjam' => 'Drs. H. Maryono',
+            'unit_kerja' => 'MAN 1 Sleman',
+            'nomor_hp' => '081398765433',
+            'mulai' => '2026-12-09 08:00:00',
+            'selesai' => '2026-12-09 12:00:00',
+            'keperluan' => 'Pelatihan Guru Madrasah',
+            'surat_file' => $file,
+            'selected_items' => json_encode([['item_id' => $room->id, 'jumlah' => 1]]),
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJson(['success' => true]);
+
+        $id = $response->json('data.id_peminjaman');
+        $this->assertDatabaseHas('peminjaman', [
+            'id_peminjaman' => $id,
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nip' => '198005102005011002',
+        ]);
+    }
+
+    /**
+     * 24. Pengajuan pemohon internal tanpa NIP tetap ditolak karena NIP diwajibkan bagi internal.
+     */
+    public function test_24_internal_without_nip_fails_validation(): void
+    {
+        $room = $this->getRoom(0);
+
+        // 1. Tanpa field nip
+        $response1 = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nama_peminjam' => 'Pegawai Tanpa NIP',
+            'unit_kerja' => 'Bimas Islam',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-12-10 08:00:00',
+            'selesai' => '2026-12-10 12:00:00',
+            'keperluan' => 'Uji NIP Kosong',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
+        ]);
+
+        $response1->assertStatus(422)
+            ->assertJsonValidationErrors(['nip']);
+
+        // 2. NIP berisi string kosong / whitespace
+        $response2 = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '   ',
+            'nama_peminjam' => 'Pegawai NIP Spasi',
+            'unit_kerja' => 'Bimas Islam',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-12-10 08:00:00',
+            'selesai' => '2026-12-10 12:00:00',
+            'keperluan' => 'Uji NIP Spasi',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
+        ]);
+
+        $response2->assertStatus(422)
+            ->assertJsonValidationErrors(['nip']);
+    }
+
+    /**
+     * 25. Respons error validasi API tetap informatif dan tidak membocorkan detail SQL kepada pengguna.
+     */
+    public function test_25_api_does_not_leak_sql_details_on_query_exception(): void
+    {
+        $room = $this->getAulaLantai3();
+        $file = $this->createValidPdf();
+
+        // Mock BookingService untuk melempar QueryException simulasi constraint violation
+        $this->mock(BookingService::class, function ($mock) {
+            $mock->shouldReceive('validateOperationalRules')
+                ->andReturn(['valid' => true]);
+            $mock->shouldReceive('createPeminjaman')
+                ->andThrow(new QueryException(
+                    'sqlite',
+                    'insert into "peminjaman" ("nip") values (?)',
+                    [null],
+                    new \Exception("SQLSTATE[23000]: Integrity constraint violation: 1048 Column 'nip' cannot be null")
+                ));
+        });
+
+        $response = $this->post('/api/peminjaman', [
+            'applicant_type' => 'external',
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nama_peminjam' => 'Uji Keamanan QueryException',
+            'unit_kerja' => 'Madrasah',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-12-11 08:00:00',
+            'selesai' => '2026-12-11 12:00:00',
+            'keperluan' => 'Uji Error Masking',
+            'surat_file' => $file,
+            'selected_items' => json_encode([['item_id' => $room->id, 'jumlah' => 1]]),
+        ]);
+
+        $response->assertStatus(422);
+        $content = $response->getContent();
+        $this->assertStringNotContainsString('SQLSTATE', $content);
+        $this->assertStringNotContainsString('Integrity constraint violation', $content);
+        $this->assertStringNotContainsString('Column \'nip\' cannot be null', $content);
+        $this->assertStringNotContainsString('insert into', $content);
+        $response->assertJson([
+            'success' => false,
+            'message' => 'Terjadi kendala pada database saat menyimpan data pengajuan. Pastikan seluruh isian telah sesuai ketentuan.',
+        ]);
+    }
+
+    /**
+     * 26. Pemohon eksternal boleh meminjam ruangan (Aula Lantai 3) pada akhir pekan (Sabtu & Minggu).
+     */
+    public function test_26_external_applicant_can_borrow_room_on_weekends(): void
+    {
+        $aula = $this->getAulaLantai3();
+        $file = $this->createValidPdf();
+
+        // Sabtu, 21 November 2026
+        $resSaturday = $this->post('/api/peminjaman', [
+            'applicant_type' => 'external',
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nama_peminjam' => 'Ustadz Mansyur',
+            'unit_kerja' => 'Yayasan Pendidikan Islam',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-21 08:00:00',
+            'selesai' => '2026-11-21 16:00:00',
+            'keperluan' => 'Seminar Pendidikan Akhir Pekan',
+            'surat_file' => $file,
+            'selected_items' => json_encode([['item_id' => $aula->id, 'jumlah' => 1]]),
+        ]);
+        $resSaturday->assertStatus(201)->assertJson(['success' => true]);
+
+        // Minggu, 22 November 2026
+        $resSunday = $this->post('/api/peminjaman', [
+            'applicant_type' => 'external',
+            'pihak_pemohon' => 'Eksternal (Madrasah/KUA/Lainnya)',
+            'nama_peminjam' => 'Ustadz Mansyur',
+            'unit_kerja' => 'Yayasan Pendidikan Islam',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-22 08:00:00',
+            'selesai' => '2026-11-22 16:00:00',
+            'keperluan' => 'Workshop Hari Minggu',
+            'surat_file' => $this->createValidPdf('surat_minggu.pdf'),
+            'selected_items' => json_encode([['item_id' => $aula->id, 'jumlah' => 1]]),
+        ]);
+        $resSunday->assertStatus(201)->assertJson(['success' => true]);
+    }
+
+    /**
+     * 27. Kendaraan dan perlengkapan dinas DITOLAK pada akhir pekan (Sabtu & Minggu).
+     */
+    public function test_27_vehicle_and_equipment_rejected_on_weekends(): void
+    {
+        $vehicle = $this->getVehicle(0);
+        $equipment = $this->getEquipment(0);
+
+        // Uji pemohon internal pinjam kendaraan pada hari Sabtu (2026-11-21)
+        $resVeh = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198001012005011001',
+            'nama_peminjam' => 'Staf Umum',
+            'unit_kerja' => 'Subbag TU',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-21 08:00:00',
+            'selesai' => '2026-11-21 12:00:00',
+            'keperluan' => 'Dinas Luar',
+            'selected_items' => [['item' => ['id' => $vehicle->id], 'jumlah' => 1]],
+        ]);
+        $resVeh->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
+
+        // Uji perlengkapan pada hari Minggu (2026-11-22)
+        $resEq = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198001012005011001',
+            'nama_peminjam' => 'Staf Umum',
+            'unit_kerja' => 'Subbag TU',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-22 08:00:00',
+            'selesai' => '2026-11-22 12:00:00',
+            'keperluan' => 'Peminjaman Proyektor',
+            'selected_items' => [['item' => ['id' => $equipment->id], 'jumlah' => 1]],
+        ]);
+        $resEq->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
+    }
+
+    /**
+     * 28. Kendaraan dan perlengkapan dinas DITOLAK pada hari libur nasional resmi 2026.
+     */
+    public function test_28_vehicle_and_equipment_rejected_on_official_national_holidays(): void
+    {
+        $vehicle = $this->getVehicle(0);
+
+        // 17 Agustus 2026 (Senin) - Hari Kemerdekaan Republik Indonesia
+        $resHoliday = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198001012005011001',
+            'nama_peminjam' => 'Staf Umum',
+            'unit_kerja' => 'Subbag TU',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-08-17 08:00:00',
+            'selesai' => '2026-08-17 12:00:00',
+            'keperluan' => 'Perjalanan Hari Kemerdekaan',
+            'selected_items' => [['item' => ['id' => $vehicle->id], 'jumlah' => 1]],
+        ]);
+        $resHoliday->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
+    }
+
+    /**
+     * 29. Batas jam operasional kendaraan dan perlengkapan (Senin–Kamis 07.30–16.00, Jumat 07.30–16.30 WIB).
+     */
+    public function test_29_vehicle_and_equipment_operating_hours_validation(): void
+    {
+        $vehicle = $this->getVehicle(0);
+
+        // Senin 2026-11-16: mulai jam 07:00 (sebelum 07.30) -> HARUS DITOLAK
+        $resEarly = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198001012005011001',
+            'nama_peminjam' => 'Staf Umum',
+            'unit_kerja' => 'Subbag TU',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-16 07:00:00',
+            'selesai' => '2026-11-16 11:00:00',
+            'keperluan' => 'Dinas Pagi Buta',
+            'selected_items' => [['item' => ['id' => $vehicle->id], 'jumlah' => 1]],
+        ]);
+        $resEarly->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
+
+        // Kamis 2026-11-19: selesai jam 17:00 (melebihi 16.00) -> HARUS DITOLAK
+        $resLateThu = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198001012005011001',
+            'nama_peminjam' => 'Staf Umum',
+            'unit_kerja' => 'Subbag TU',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-19 13:00:00',
+            'selesai' => '2026-11-19 17:00:00',
+            'keperluan' => 'Dinas Lembur',
+            'selected_items' => [['item' => ['id' => $vehicle->id], 'jumlah' => 1]],
+        ]);
+        $resLateThu->assertStatus(422)
+            ->assertJsonValidationErrors(['selected_items']);
+
+        // Jumat 2026-11-20: jadwal valid 07:30 s/d 16:30 -> HARUS DITERIMA
+        $resFriValid = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198001012005011001',
+            'nama_peminjam' => 'Staf Umum',
+            'unit_kerja' => 'Subbag TU',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-11-20 07:30:00',
+            'selesai' => '2026-11-20 16:30:00',
+            'keperluan' => 'Monitoring Jumat Berkah',
+            'selected_items' => [['item' => ['id' => $vehicle->id], 'jumlah' => 1]],
+        ]);
+        $resFriValid->assertStatus(201)->assertJson(['success' => true]);
+    }
+
+    /**
+     * 30. Peminjaman multihari: setiap tanggal dalam rentang merupakan sesi harian aktif
+     * yang mencegah bentrok waktu. Pembatalan sesi satu tanggal membebaskan interval sesi tersebut.
+     */
+    public function test_30_multiday_normal_booking_leaves_intermediate_dates_free(): void
+    {
+        $room = $this->getAulaLantai3();
+
+        // 1. Ajukan peminjaman multihari: 26 Oktober s/d 29 Oktober (08:00 - 10:00)
+        $bookingRes = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198501012010011001',
+            'nama_peminjam' => 'Panitia Multihari',
+            'unit_kerja' => 'Kemenag Sleman',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-10-26 08:00:00',
+            'selesai' => '2026-10-29 10:00:00',
+            'keperluan' => 'Kegiatan Multihari 26-29 Okt',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
+        ]);
+        $bookingRes->assertStatus(201);
+        $rootId = $bookingRes->json('data.id_peminjaman');
+
+        // Setujui seluruh sesi
+        Peminjaman::where('id', $rootId)->orWhere('parent_id', $rootId)->update(['status' => 'Disetujui']);
+
+        // 2. Tanggal tengah (27 Oktober 08:00-10:00) bentrok -> HARUS DITOLAK (422)
+        $resDay27Overlap = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198501012010011001',
+            'nama_peminjam' => 'Peminjam Tanggal Antara 27',
+            'unit_kerja' => 'Penma',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-10-27 08:00:00',
+            'selesai' => '2026-10-27 10:00:00',
+            'keperluan' => 'Acara Bentrok Tanggal 27',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
+        ]);
+        $resDay27Overlap->assertStatus(422)->assertJson(['success' => false]);
+
+        // 3. Batalkan sesi tanggal 27 Oktober secara spesifik
+        $session27 = Peminjaman::where('parent_id', $rootId)->where('tgl_mulai', '2026-10-27')->first();
+        $this->assertNotNull($session27);
+        $session27->update(['status' => 'Dibatalkan']);
+
+        // 4. Setelah sesi tanggal 27 dibatalkan, peminjaman tanggal 27 (08:00-10:00) -> HARUS BERHASIL (201)
+        $resDay27Free = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198501012010011001',
+            'nama_peminjam' => 'Peminjam Tanggal Antara 27 Bebas',
+            'unit_kerja' => 'Penma',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-10-27 08:00:00',
+            'selesai' => '2026-10-27 10:00:00',
+            'keperluan' => 'Acara Tanggal 27 Setelah Pembatalan',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
+        ]);
+        $resDay27Free->assertStatus(201)->assertJson(['success' => true]);
+
+        // 5. Tanggal 26 (sesi awal) tetap aktif dan menolak bentrok (08:00-10:00) -> 422
+        $resDay26Overlap = $this->postJson('/api/peminjaman', [
+            'applicant_type' => 'internal',
+            'pihak_pemohon' => 'Internal Kemenag Sleman',
+            'nip' => '198501012010011001',
+            'nama_peminjam' => 'Peminjam Jam Bentrok',
+            'unit_kerja' => 'Penma',
+            'nomor_hp' => '081234567890',
+            'mulai' => '2026-10-26 09:00:00',
+            'selesai' => '2026-10-26 10:00:00',
+            'keperluan' => 'Sesi yang menabrak jadwal lama',
+            'selected_items' => [['item' => ['id' => $room->id], 'jumlah' => 1]],
+        ]);
+        $resDay26Overlap->assertStatus(422)->assertJson(['success' => false]);
     }
 }

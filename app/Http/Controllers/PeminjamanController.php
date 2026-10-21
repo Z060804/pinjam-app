@@ -6,8 +6,10 @@ use App\Models\ItemJenis;
 use App\Models\ItemPeminjaman;
 use App\Services\BookingService;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -48,6 +50,7 @@ class PeminjamanController extends Controller
         $aggregated = $this->aggregateItemsPayload($request->input('items'));
         $isRecurring = $request->boolean('is_recurring');
         $recurringEndDate = $request->input('recurring_end_date');
+        $isExternal = $this->determineIsExternal($request);
 
         if ($isRecurring && $recurringEndDate) {
             $schedules = $this->bookingService->generateWeeklySchedules(
@@ -63,6 +66,24 @@ class PeminjamanController extends Controller
                     'message' => 'Tanggal akhir pengulangan tidak boleh lebih awal dari tanggal mulai.',
                     'conflicts' => [],
                 ], 422);
+            }
+
+            // Validasi aturan operasional untuk setiap jadwal pengulangan
+            foreach ($schedules as $sched) {
+                $opResult = $this->bookingService->validateOperationalRules(
+                    $sched['mulai'],
+                    $sched['selesai'],
+                    $aggregated,
+                    $isExternal
+                );
+                if (! $opResult['valid']) {
+                    return response()->json([
+                        'success' => false,
+                        'has_conflict' => true,
+                        'message' => $opResult['message'],
+                        'conflicts' => [],
+                    ], 422);
+                }
             }
 
             $allConflicts = [];
@@ -82,13 +103,23 @@ class PeminjamanController extends Controller
             if (! empty($allConflicts)) {
                 $firstDate = array_key_first($allConflicts);
                 $firstConflicts = $allConflicts[$firstDate];
+                $firstConflict = $firstConflicts[0];
                 $conflictItemNames = implode(', ', array_unique(array_column($firstConflicts, 'item_nama')));
-                $dateLabel = Carbon::parse($firstDate)->translatedFormat('d F Y');
+                $dateLabel = Carbon::parse($firstConflict['session_date'] ?? $firstDate)->translatedFormat('d F Y');
+                $reqTime = ($firstConflict['session_waktu_mulai'] ?? '').'-'.($firstConflict['session_waktu_selesai'] ?? '').' WIB';
+
+                $existingDetail = '';
+                if (! empty($firstConflict['overlapping_bookings'][0])) {
+                    $firstOverlap = $firstConflict['overlapping_bookings'][0];
+                    $oldTime = ($firstOverlap['waktu_mulai'] ?? '').'-'.($firstOverlap['waktu_selesai'] ?? '').' WIB';
+                    $peminjamOld = $firstOverlap['peminjam'] ?? 'peminjam lain';
+                    $existingDetail = " (jadwal lama: {$oldTime} oleh {$peminjamOld})";
+                }
 
                 return response()->json([
                     'success' => false,
                     'has_conflict' => true,
-                    'message' => "Terdapat bentrok jadwal pada tanggal {$dateLabel} untuk {$conflictItemNames}.",
+                    'message' => "Terdapat bentrok jadwal pada tanggal {$dateLabel} untuk {$conflictItemNames} (jam {$reqTime}){$existingDetail}.",
                     'conflicts' => $firstConflicts,
                     'conflicting_dates' => $conflictingDates,
                     'all_conflicts_by_date' => $allConflicts,
@@ -103,6 +134,22 @@ class PeminjamanController extends Controller
             ]);
         }
 
+        // Validasi aturan operasional pengajuan biasa
+        $opResult = $this->bookingService->validateOperationalRules(
+            $request->input('mulai'),
+            $request->input('selesai'),
+            $aggregated,
+            $isExternal
+        );
+        if (! $opResult['valid']) {
+            return response()->json([
+                'success' => false,
+                'has_conflict' => true,
+                'message' => $opResult['message'],
+                'conflicts' => [],
+            ], 422);
+        }
+
         $conflicts = $this->bookingService->detectConflicts(
             $request->input('mulai'),
             $request->input('selesai'),
@@ -110,10 +157,23 @@ class PeminjamanController extends Controller
         );
 
         if (! empty($conflicts)) {
+            $firstConflict = $conflicts[0];
+            $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
+            $dateLabel = Carbon::parse($firstConflict['session_date'] ?? $request->input('mulai'))->translatedFormat('d F Y');
+            $reqTime = ($firstConflict['session_waktu_mulai'] ?? '').'-'.($firstConflict['session_waktu_selesai'] ?? '').' WIB';
+
+            $existingDetail = '';
+            if (! empty($firstConflict['overlapping_bookings'][0])) {
+                $firstOverlap = $firstConflict['overlapping_bookings'][0];
+                $oldTime = ($firstOverlap['waktu_mulai'] ?? '').'-'.($firstOverlap['waktu_selesai'] ?? '').' WIB';
+                $peminjamOld = $firstOverlap['peminjam'] ?? 'peminjam lain';
+                $existingDetail = " (jadwal lama: {$oldTime} oleh {$peminjamOld})";
+            }
+
             return response()->json([
                 'success' => false,
                 'has_conflict' => true,
-                'message' => 'Terdapat bentrok jadwal pada item yang dipilih.',
+                'message' => "Terdapat bentrok jadwal pada tanggal {$dateLabel} untuk {$conflictItemNames} (jam {$reqTime}){$existingDetail}.",
                 'conflicts' => $conflicts,
             ], 422);
         }
@@ -150,6 +210,9 @@ class PeminjamanController extends Controller
             $uploadedFilePath = $storedPath;
             $suratFilename = $originalName;
             $suratUrl = $storedPath;
+        } else {
+            $suratFilename = $request->input('surat_peminjaman_name', $request->input('surat_peminjaman'));
+            $suratUrl = $request->input('surat_url', $suratFilename);
         }
 
         $isExternal = $this->determineIsExternal($request);
@@ -191,9 +254,26 @@ class PeminjamanController extends Controller
                 'message' => 'Pengajuan peminjaman berhasil dikirim',
                 'data' => $result['peminjaman'],
             ], 201);
+        } catch (QueryException $e) {
+            $this->cleanupUploadedFile($uploadedFilePath);
+            Log::error('Database QueryException during peminjaman submission: '.$e->getMessage(), [
+                'exception' => $e,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kendala pada database saat menyimpan data pengajuan. Pastikan seluruh isian telah sesuai ketentuan.',
+            ], 422);
         } catch (\Throwable $e) {
             $this->cleanupUploadedFile($uploadedFilePath);
-            throw $e;
+            Log::error('Unexpected error during peminjaman submission: '.$e->getMessage(), [
+                'exception' => $e,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan sistem saat memproses pengajuan. Silakan coba beberapa saat lagi.',
+            ], 500);
         }
     }
 
@@ -334,6 +414,18 @@ class PeminjamanController extends Controller
                     }
                 }
             }
+
+            if ($request->filled('mulai') && $request->filled('selesai') && $request->filled('selected_items')) {
+                $opResult = $this->bookingService->validateOperationalRules(
+                    (string) $request->input('mulai'),
+                    (string) $request->input('selesai'),
+                    $this->aggregateItemsPayload($request->input('selected_items', [])),
+                    $isExternal
+                );
+                if (! $opResult['valid']) {
+                    $v->errors()->add('selected_items', $opResult['message'] ?? 'Permohonan melanggar aturan operasional sarana prasarana.');
+                }
+            }
         });
 
         return $validator;
@@ -415,7 +507,7 @@ class PeminjamanController extends Controller
 
         if ($suratRequired) {
             $hasUploadedFile = $request->hasFile('surat_file') && $request->file('surat_file')->isValid();
-            $hasExistingSurat = $request->filled('surat_url') || $request->filled('surat_peminjaman');
+            $hasExistingSurat = $request->filled('surat_url') || $request->filled('surat_peminjaman') || $request->filled('surat_peminjaman_name');
 
             if (! $hasUploadedFile && ! $hasExistingSurat) {
                 $validator->errors()->add('surat_file', 'Pemohon eksternal wajib mengunggah surat permohonan peminjaman resmi (format PDF, maks. 1 MB).');
@@ -554,5 +646,29 @@ class PeminjamanController extends Controller
         if ($path && Storage::disk('local')->exists($path)) {
             Storage::disk('local')->delete($path);
         }
+    }
+
+    /**
+     * Konfigurasi jam operasional dan hari libur nasional resmi untuk sinkronisasi frontend.
+     */
+    public function getOperationalRules(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'operating_hours' => [
+                'vehicle_and_equipment' => [
+                    'monday_to_thursday' => ['start' => '07:30', 'end' => '16:00'],
+                    'friday' => ['start' => '07:30', 'end' => '16:30'],
+                    'allow_weekend' => false,
+                    'allow_holiday' => false,
+                ],
+                'room' => [
+                    'allow_weekend_internal' => true,
+                    'allow_weekend_external' => true,
+                    'allow_holiday' => true,
+                ],
+            ],
+            'holidays_2026' => config('holidays.2026', []),
+        ]);
     }
 }

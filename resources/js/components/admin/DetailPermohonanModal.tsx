@@ -78,17 +78,21 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
     }
   };
 
+  const totalSessions = currentPermohonan.total_sessions || currentPermohonan.recurring_schedules?.length || 1;
+  const isWeeklyRecurring = Boolean(currentPermohonan.is_recurring && currentPermohonan.recurring_frequency);
+  const isMultiday = currentPermohonan.booking_type === 'multiday' || (!isWeeklyRecurring && (totalSessions > 1 || Boolean(currentPermohonan.parent_id)));
+  const isSeries = Boolean(isWeeklyRecurring || isMultiday || totalSessions > 1 || currentPermohonan.parent_id);
+
   const handleCancelSeries = async () => {
-    const total = currentPermohonan.total_sessions || currentPermohonan.recurring_schedules?.length || 1;
+    const total = totalSessions;
+    const label = isMultiday ? 'seluruh pengajuan peminjaman multihari ini' : 'SELURUH rangkaian peminjaman berulang ini';
     const confirmed = window.confirm(
-      `Konfirmasi Pembatalan Rangkaian:\nApakah Anda yakin ingin membatalkan SELURUH rangkaian peminjaman berulang ini (${total} sesi)?\n\nTindakan ini akan membatalkan semua sesi jadwal dalam rangkaian.`
+      `Konfirmasi Pembatalan:\nApakah Anda yakin ingin membatalkan ${label} (${total} sesi)?\n\nTindakan ini akan membatalkan semua sesi jadwal yang masih aktif.`
     );
     if (!confirmed) return;
 
     await handleChangeStatus('Dibatalkan', 'series');
   };
-
-  const isRecurring = Boolean(currentPermohonan.is_recurring || currentPermohonan.parent_id);
 
   return (
     <div
@@ -140,7 +144,7 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
                   className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer shadow-xs"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  {isRecurring ? 'Setujui Rangkaian' : 'Setujui'}
+                  {isSeries ? 'Setujui Seluruh Jadwal' : 'Setujui'}
                 </button>
                 <button
                   type="button"
@@ -158,11 +162,11 @@ export const DetailPermohonanModal: React.FC<DetailPermohonanModalProps> = ({
                 <button
                   type="button"
                   disabled={updating}
-                  onClick={() => handleChangeStatus('Dibatalkan', isRecurring ? 'series' : 'single')}
+                  onClick={() => handleChangeStatus('Dibatalkan', isSeries ? 'series' : 'single')}
                   className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition cursor-pointer"
                 >
                   <Ban className="w-3.5 h-3.5" />
-                  {isRecurring ? 'Batalkan Seluruh Rangkaian' : 'Batalkan'}
+                  {isMultiday ? 'Batalkan Seluruh Pengajuan' : isSeries ? 'Batalkan Seluruh Rangkaian' : 'Batalkan'}
                 </button>
               </div>
             )}

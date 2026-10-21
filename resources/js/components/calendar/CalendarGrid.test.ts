@@ -3,7 +3,7 @@ import { MasterPeminjaman } from '../../types';
 
 // Helper mirroring getEventsForDate logic in CalendarGrid.tsx
 function getEventsForDate(events: MasterPeminjaman[], cellDateStr: string): MasterPeminjaman[] {
-  return events.filter((ev) => {
+  const matched = events.filter((ev) => {
     const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
     const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
     if (!start) return false;
@@ -12,9 +12,37 @@ function getEventsForDate(events: MasterPeminjaman[], cellDateStr: string): Mast
       return cellDateStr === start;
     }
 
-    // Normal multi-day booking: only show on start and end dates!
-    return cellDateStr === start || cellDateStr === end;
+    // Normal multi-day booking: continuous range from start to end
+    return cellDateStr >= start && cellDateStr <= end;
   });
+
+  const seen = new Set<string>();
+  return matched.filter((ev) => {
+    const key = ev.id || ev.id_peminjaman || '';
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getRangeIndicator(ev: MasterPeminjaman, dateString: string): string | null {
+  if (ev.range_indicator) return ev.range_indicator;
+  if (ev.is_recurring && !ev.is_multiday) return null;
+
+  if (ev.total_sessions && ev.total_sessions > 1 && ev.session_number) {
+    if (ev.session_number === 1) return 'Mulai';
+    if (ev.session_number === ev.total_sessions) return 'Habis';
+    return 'Berlangsung';
+  }
+
+  const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
+  const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
+  if (!start || !end || start === end) return null;
+
+  if (dateString === start) return 'Mulai';
+  if (dateString === end) return 'Habis';
+  if (dateString > start && dateString < end) return 'Berlangsung';
+  return null;
 }
 
 describe('CalendarGrid Event Date Matching', () => {
@@ -23,38 +51,42 @@ describe('CalendarGrid Event Date Matching', () => {
     id_peminjaman: 'PMJ-NORMAL-001',
     nama_peminjam: 'Budi Santoso',
     unit_kerja: 'KUA Depok',
-    mulai: '2026-10-22 08:00:00',
-    selesai: '2026-10-30 16:00:00',
-    tgl_mulai: '2026-10-22',
-    tgl_selesai: '2026-10-30',
+    mulai: '2026-10-02 08:00:00',
+    selesai: '2026-10-06 10:00:00',
+    tgl_mulai: '2026-10-02',
+    tgl_selesai: '2026-10-06',
     waktu_mulai: '08:00',
-    waktu_selesai: '16:00',
+    waktu_selesai: '10:00',
     keperluan: 'Bimtek Penghulu Multi-Hari',
     status: 'Disetujui',
     is_recurring: false,
+    is_multiday: true,
   };
 
-  it('displays normal multi-day event on start date (22 Oct) and end date (30 Oct) only', () => {
+  it('displays continuous multi-day range on calendar: 2 Oct (Mulai), 3-5 Oct (Berlangsung), and 6 Oct (Habis)', () => {
     const events = [normalMultiDayEvent];
 
-    // Must show on start date
-    expect(getEventsForDate(events, '2026-10-22')).toHaveLength(1);
+    // Must show on start date (2 Oct) with 'Mulai'
+    const evStart = getEventsForDate(events, '2026-10-02');
+    expect(evStart).toHaveLength(1);
+    expect(getRangeIndicator(evStart[0], '2026-10-02')).toBe('Mulai');
 
-    // Must NOT show on intermediate dates 23..29 Oct
-    expect(getEventsForDate(events, '2026-10-23')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-24')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-25')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-26')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-27')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-28')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-29')).toHaveLength(0);
+    // Intermediate dates 3, 4, 5 Oct must show 'Berlangsung'
+    const intermediateDates = ['2026-10-03', '2026-10-04', '2026-10-05'];
+    intermediateDates.forEach((dateStr) => {
+      const evMid = getEventsForDate(events, dateStr);
+      expect(evMid).toHaveLength(1);
+      expect(getRangeIndicator(evMid[0], dateStr)).toBe('Berlangsung');
+    });
 
-    // Must show on end date
-    expect(getEventsForDate(events, '2026-10-30')).toHaveLength(1);
+    // Must show on end date (6 Oct) with 'Habis'
+    const evEnd = getEventsForDate(events, '2026-10-06');
+    expect(evEnd).toHaveLength(1);
+    expect(getRangeIndicator(evEnd[0], '2026-10-06')).toBe('Habis');
 
     // Must NOT show outside the range
-    expect(getEventsForDate(events, '2026-10-21')).toHaveLength(0);
-    expect(getEventsForDate(events, '2026-10-31')).toHaveLength(0);
+    expect(getEventsForDate(events, '2026-10-01')).toHaveLength(0);
+    expect(getEventsForDate(events, '2026-10-07')).toHaveLength(0);
   });
 
   it('displays recurring sessions on their respective weekly dates (2, 9, 16, 23 Nov)', () => {

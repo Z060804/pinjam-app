@@ -16,7 +16,9 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
   onCancelSeries,
   updating = false,
 }) => {
-  const isRecurring = Boolean(permohonan.is_recurring || permohonan.parent_id);
+  const isWeeklyRecurring = Boolean(permohonan.is_recurring && permohonan.recurring_frequency);
+  const isMultiday = permohonan.booking_type === 'multiday' || (!isWeeklyRecurring && ((permohonan.recurring_schedules?.length || 0) > 1 || (permohonan.total_sessions || 0) > 1));
+  const isSeries = Boolean(isWeeklyRecurring || isMultiday || permohonan.parent_id || (permohonan.recurring_schedules && permohonan.recurring_schedules.length > 1));
   const totalSessions = permohonan.total_sessions || permohonan.recurring_schedules?.length || 1;
   const hasActiveSessions = permohonan.recurring_schedules?.some((s) => s.status !== 'Dibatalkan');
 
@@ -26,10 +28,10 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
         <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
           Jadwal &amp; Waktu Pelaksanaan
         </h3>
-        {isRecurring && (
+        {isSeries && (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
             <Repeat className="w-3 h-3" />
-            Peminjaman Berulang — {totalSessions} Sesi
+            {isMultiday ? `Peminjaman Multihari — ${totalSessions} Sesi` : `Peminjaman Berulang — ${totalSessions} Sesi`}
           </span>
         )}
       </div>
@@ -43,7 +45,7 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
         </div>
         <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
           <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">
-            {isRecurring ? 'Berulang Sampai' : 'Tanggal Selesai'}
+            {isWeeklyRecurring ? 'Berulang Sampai' : 'Tanggal Selesai'}
           </p>
           <p className="text-sm font-bold text-slate-800">
             {formatDate(permohonan.recurring_end_date ?? permohonan.tgl_selesai)}
@@ -53,16 +55,18 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
         </div>
       </div>
 
-      {isRecurring && permohonan.recurring_schedules && permohonan.recurring_schedules.length > 0 && (
+      {isSeries && permohonan.recurring_schedules && permohonan.recurring_schedules.length > 0 && (
         <div className="mt-4 p-3.5 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="text-[11px] font-extrabold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
                 <Repeat className="w-3.5 h-3.5 text-blue-600" />
-                Peminjaman Berulang — {totalSessions} Sesi
+                {isMultiday
+                  ? `RANGKAIAN JADWAL PEMINJAMAN (${totalSessions} SESI)`
+                  : `PEMINJAMAN BERULANG (${totalSessions} SESI)`}
               </p>
               <p className="text-[10px] text-blue-700/80 mt-0.5">
-                Setiap sesi dapat dibatalkan secara terpisah tanpa mengganggu jadwal lainnya.
+                Semua tanggal dari awal hingga akhir merupakan sesi harian yang dapat dikelola secara individual.
               </p>
             </div>
             {permohonan.next_session_date && (
@@ -89,6 +93,7 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
                   const sessionId = s.id_peminjaman || s.id || '';
                   const sessionDateStr = formatDate(s.tgl_mulai || s.mulai);
                   const isCancelled = s.status === 'Dibatalkan';
+                  const displayStatus = s.computed_status || s.status;
 
                   return (
                     <tr
@@ -98,7 +103,7 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
                       }`}
                     >
                       <td className="py-2.5 px-3 font-bold text-slate-800 whitespace-nowrap">
-                        {sessionNum} dari {totalSessions}
+                        Sesi {sessionNum}
                       </td>
                       <td className="py-2.5 px-3 font-semibold text-slate-800 whitespace-nowrap">
                         {sessionDateStr}
@@ -109,16 +114,18 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         <span
                           className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            s.status === 'Disetujui'
+                            displayStatus === 'Disetujui'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : s.status === 'Dibatalkan'
+                              : displayStatus === 'Berlangsung'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold animate-pulse'
+                              : displayStatus === 'Selesai'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                              : isCancelled
                               ? 'bg-slate-200 text-slate-600 border border-slate-300'
-                              : s.status === 'Tidak Disetujui'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
                           }`}
                         >
-                          {s.status}
+                          {displayStatus}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center whitespace-nowrap">
@@ -148,7 +155,9 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
           {onCancelSeries && hasActiveSessions && (
             <div className="pt-1 flex items-center justify-between border-t border-blue-100/60">
               <span className="text-[10px] text-slate-500">
-                Perlu membatalkan semua tanggal pertemuan sekaligus?
+                {isMultiday
+                  ? 'Batalkan seluruh sesi jadwal peminjaman multihari ini?'
+                  : 'Perlu membatalkan semua tanggal pertemuan sekaligus?'}
               </span>
               <button
                 type="button"
@@ -157,7 +166,7 @@ export const DetailScheduleSection: React.FC<DetailScheduleSectionProps> = ({
                 className="flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-900 bg-white hover:bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl transition cursor-pointer disabled:opacity-50 shadow-2xs"
               >
                 <Ban className="w-3.5 h-3.5" />
-                Batalkan Seluruh Rangkaian
+                {isMultiday ? 'Batalkan Seluruh Pengajuan' : 'Batalkan Seluruh Rangkaian'}
               </button>
             </div>
           )}

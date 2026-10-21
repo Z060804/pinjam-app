@@ -18,7 +18,32 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
   events,
   onSelectEvent,
 }) => {
+  const getRangeIndicator = (ev: MasterPeminjaman): string | null => {
+    if (ev.range_indicator) return ev.range_indicator;
+
+    // Sesi berulang mingguan bukan rentang multihari kontinu
+    if (ev.is_recurring && !ev.is_multiday) return null;
+
+    if (ev.total_sessions && ev.total_sessions > 1 && ev.session_number) {
+      if (ev.session_number === 1) return 'Mulai';
+      if (ev.session_number === ev.total_sessions) return 'Habis';
+      return 'Berlangsung';
+    }
+
+    const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
+    const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
+    if (!start || !end || start === end) return null;
+
+    if (dateString === start) return 'Mulai';
+    if (dateString === end) return 'Habis';
+    if (dateString > start && dateString < end) return 'Berlangsung';
+    return null;
+  };
+
   const getBadgeColor = (ev: MasterPeminjaman): string => {
+    if (ev.status === 'Dibatalkan') {
+      return 'bg-slate-100 text-slate-500 border-slate-300 opacity-75 hover:bg-slate-200';
+    }
     const jenis = (ev.jenis ?? '').toLowerCase();
     if (jenis === 'kendaraan') {
       return 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100';
@@ -29,26 +54,22 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
     return 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100';
   };
 
-  const getTimeLabel = (ev: MasterPeminjaman): string => {
-    if (ev.waktu_mulai) return ev.waktu_mulai.substring(0, 5);
-    if (ev.mulai && ev.mulai.includes(' ')) {
-      return ev.mulai.split(' ')[1].substring(0, 5);
+  const getTimeLabel = (ev: MasterPeminjaman, _rangeInd: string | null): string => {
+    const startStr = ev.waktu_mulai
+      ? ev.waktu_mulai.substring(0, 5)
+      : (ev.mulai && ev.mulai.includes(' ') ? ev.mulai.split(' ')[1].substring(0, 5) : '');
+    const endStr = ev.waktu_selesai
+      ? ev.waktu_selesai.substring(0, 5)
+      : (ev.selesai && ev.selesai.includes(' ') ? ev.selesai.split(' ')[1].substring(0, 5) : '');
+
+    if (startStr && endStr) {
+      return `${startStr} - ${endStr}`;
     }
-    return '';
+    return startStr || (endStr ? `s/d ${endStr}` : '');
   };
 
   const getEventTitle = (ev: MasterPeminjaman): string => {
     return ev.item_dipinjam ?? ev.ruangan ?? ev.kegiatan ?? ev.keperluan ?? 'Peminjaman';
-  };
-
-  const getRangeIndicator = (ev: MasterPeminjaman): string | null => {
-    const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
-    const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
-    if (!start || !end || start === end) return null;
-
-    if (dateString === start) return 'Mulai';
-    if (dateString === end) return 'Habis';
-    return 'Pinjam';
   };
 
   return (
@@ -78,12 +99,14 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
 
       <div className="flex-1 space-y-1 overflow-hidden">
         {events.slice(0, 2).map((ev) => {
-          const time = getTimeLabel(ev);
-          const title = getEventTitle(ev);
           const rangeInd = getRangeIndicator(ev);
+          const time = getTimeLabel(ev, rangeInd);
+          const title = getEventTitle(ev);
           const colorClass = getBadgeColor(ev);
           const kegiatan = ev.kegiatan ?? ev.keperluan;
           const peminjam = ev.nama_pemohon ?? ev.nama_peminjam;
+
+          const isCancelled = ev.status === 'Dibatalkan';
 
           return (
             <button
@@ -91,7 +114,7 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
               type="button"
               onClick={() => onSelectEvent(ev)}
               className={`w-full text-left px-2 py-1 rounded-lg text-[11px] truncate border cursor-pointer transition-all shadow-2xs block leading-tight ${colorClass}`}
-              title={`${title} - ${kegiatan} (${peminjam})`}
+              title={`${title} - ${kegiatan} (${peminjam})${isCancelled ? ' [Dibatalkan]' : ''}`}
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="font-bold truncate flex items-center gap-1">
@@ -100,17 +123,32 @@ export const CalendarCell: React.FC<CalendarCellProps> = ({
                       Berulang
                     </span>
                   )}
-                  <span className="truncate">{title}</span>
+                  {isCancelled && (
+                    <span className="inline-block text-[8px] font-extrabold px-1 rounded bg-slate-200 text-slate-700 shrink-0">
+                      Batal
+                    </span>
+                  )}
+                  <span className={`truncate ${isCancelled ? 'line-through text-slate-500' : ''}`}>{title}</span>
                 </span>
                 {rangeInd && (
-                  <span className="text-[9px] font-extrabold px-1 rounded bg-black/10 shrink-0">
+                  <span
+                    className={`text-[9px] font-extrabold px-1 rounded shrink-0 ${
+                      isCancelled
+                        ? 'bg-slate-200 text-slate-500 line-through'
+                        : rangeInd === 'Mulai'
+                        ? 'bg-emerald-600/15 text-emerald-800'
+                        : rangeInd === 'Habis'
+                        ? 'bg-rose-600/15 text-rose-800'
+                        : 'bg-amber-600/15 text-amber-800'
+                    }`}
+                  >
                     {rangeInd}
                   </span>
                 )}
               </div>
               <div className="text-[10px] opacity-75 truncate mt-0.5">
                 {time && <span className="font-semibold mr-1">{time}</span>}
-                <span>{kegiatan}</span>
+                <span className={isCancelled ? 'line-through' : ''}>{kegiatan}</span>
               </div>
             </button>
           );

@@ -43,6 +43,7 @@ class Peminjaman extends Model
         'surat_peminjaman',
         'status',
         'is_recurring',
+        'booking_type',
         'recurring_frequency',
         'recurring_end_date',
         'parent_id',
@@ -115,6 +116,31 @@ class Peminjaman extends Model
         $val = strtolower($this->attributes['pihak_pemohon'] ?? '');
 
         return (str_contains($val, 'eksternal') || str_contains($val, 'external')) ? 'external' : 'internal';
+    }
+
+    public function getBookingTypeAttribute(): string
+    {
+        if (! empty($this->attributes['booking_type']) && ! in_array($this->attributes['booking_type'], ['single', ''])) {
+            return $this->attributes['booking_type'];
+        }
+
+        if (! empty($this->attributes['is_recurring'])) {
+            return 'recurring';
+        }
+
+        $start = $this->attributes['tgl_mulai'] ?? (isset($this->attributes['mulai']) ? substr($this->attributes['mulai'], 0, 10) : null);
+        $end = $this->attributes['tgl_selesai'] ?? (isset($this->attributes['selesai']) ? substr($this->attributes['selesai'], 0, 10) : $start);
+
+        if (($start && $end && $start !== $end) || ! empty($this->attributes['parent_id'])) {
+            return 'multiday';
+        }
+
+        return $this->attributes['booking_type'] ?? 'single';
+    }
+
+    public function setBookingTypeAttribute($value): void
+    {
+        $this->attributes['booking_type'] = $value;
     }
 
     public function getIdAttribute()

@@ -13,7 +13,10 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
   const items = data.items ?? [];
   const isExternal = data.applicant_type === 'external' || (data.pihak_pemohon?.toLowerCase().includes('eksternal') ?? false);
 
-  const isRecurring = Boolean(data.is_recurring || data.parent_id);
+  const isWeeklyRecurring = Boolean(data.is_recurring && data.recurring_frequency);
+  const totalSessions = data.total_sessions || data.recurring_schedules?.length || 1;
+  const isMultiday = data.booking_type === 'multiday' || (!isWeeklyRecurring && (totalSessions > 1 || Boolean(data.parent_id)));
+  const isSeries = Boolean(isWeeklyRecurring || isMultiday || totalSessions > 1 || data.parent_id);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-6">
@@ -22,9 +25,9 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
           <span className="text-[11px] font-mono text-slate-400 block uppercase">ID Registrasi</span>
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-xl font-mono font-bold text-slate-900">{data.id_peminjaman}</h3>
-            {isRecurring && (
+            {isSeries && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                Peminjaman Berulang
+                {isMultiday ? 'Peminjaman Multihari' : 'Peminjaman Berulang'}
               </span>
             )}
             {data.session_label && (
@@ -88,12 +91,16 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
         </div>
       </div>
 
-      {/* Rincian Sesi Peminjaman Berulang dengan Status Tiap Sesi */}
-      {isRecurring && data.recurring_schedules && data.recurring_schedules.length > 0 && (
+      {/* Rincian Sesi Peminjaman (Multihari maupun Berulang Mingguan) */}
+      {isSeries && data.recurring_schedules && data.recurring_schedules.length > 0 && (
         <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200/80 space-y-2.5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-              <span>Rangkaian Jadwal Pertemuan ({data.recurring_schedules.length} Sesi)</span>
+              <span>
+                {isMultiday
+                  ? `RANGKAIAN JADWAL PEMINJAMAN (${totalSessions} SESI)`
+                  : `RANGKAIAN JADWAL PERTEMUAN (${totalSessions} SESI)`}
+              </span>
             </h4>
             {data.next_session_date && (
               <span className="text-[10px] font-bold text-blue-800 bg-white px-2 py-0.5 rounded-md border border-blue-200">
@@ -104,38 +111,45 @@ export const PelacakanDetail: React.FC<PelacakanDetailProps> = ({ data }) => {
           <div className="space-y-1.5 text-xs">
             {data.recurring_schedules.map((s, idx) => {
               const sessionNum = s.session_number ?? idx + 1;
-              const isCurrentSession = (s.id_peminjaman === data.id_peminjaman || s.id === data.id_peminjaman);
+              const isCurrentSession = (s.id_peminjaman === data.id_peminjaman || s.id === data.id_peminjaman) || Boolean(s.is_current_active);
+              const displayStatus = s.computed_status || s.status;
+              const isCancelled = s.status === 'Dibatalkan';
+
               return (
                 <div
                   key={s.id_peminjaman || idx}
                   className={`flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg border ${
                     isCurrentSession
                       ? 'bg-white border-blue-300 font-bold shadow-2xs'
+                      : isCancelled
+                      ? 'bg-slate-50/70 border-slate-200 text-slate-500 opacity-75'
                       : 'bg-white/70 border-blue-100 text-slate-700'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-800 font-semibold">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`font-semibold ${isCancelled ? 'line-through text-slate-400' : 'text-slate-800'}`}>
                       Sesi {sessionNum} — {s.tgl_mulai} ({s.waktu_mulai} - {s.waktu_selesai} WIB)
                     </span>
-                    {isCurrentSession && (
+                    {isCurrentSession && !isCancelled && (
                       <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
-                        Sesi Ini
+                        {displayStatus === 'Berlangsung' ? 'Sedang Berlangsung' : 'Sesi Ini'}
                       </span>
                     )}
                   </div>
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start sm:self-auto ${
-                      s.status === 'Disetujui'
+                      displayStatus === 'Disetujui'
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        : s.status === 'Dibatalkan'
+                        : displayStatus === 'Berlangsung'
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold animate-pulse'
+                        : displayStatus === 'Selesai'
+                        ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                        : isCancelled
                         ? 'bg-slate-200 text-slate-600 border border-slate-300'
-                        : s.status === 'Tidak Disetujui'
-                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-rose-100 text-rose-800 border border-rose-200'
                     }`}
                   >
-                    {s.status}
+                    {displayStatus}
                   </span>
                 </div>
               );

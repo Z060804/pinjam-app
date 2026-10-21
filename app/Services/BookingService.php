@@ -51,14 +51,185 @@ class BookingService
     }
 
     /**
+     * Menghasilkan jadwal sesi harian dari tanggal mulai s/d tanggal selesai untuk peminjaman biasa multihari.
+     * Setiap tanggal pada rentang multihari menghasilkan satu sesi aktual dengan interval jam yang konsisten.
+     *
+     * @return array<int, array{index: int, date: string, mulai: string, selesai: string, tgl_mulai: string, tgl_selesai: string}>
+     */
+    public function generateDailySchedules(string $mulai, string $selesai): array
+    {
+        $m = Carbon::parse($mulai);
+        $s = Carbon::parse($selesai);
+
+        $startDate = $m->toDateString();
+        $endDate = $s->toDateString();
+
+        $waktuMulai = $m->format('H:i');
+        $waktuSelesai = $s->format('H:i');
+
+        $curr = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+
+        if ($end->lt($curr)) {
+            return [];
+        }
+
+        $schedules = [];
+        $count = 0;
+
+        while ($curr->lte($end) && $count < 60) {
+            $currDateStr = $curr->toDateString();
+            $schedules[] = [
+                'index' => $count + 1,
+                'date' => $currDateStr,
+                'mulai' => "{$currDateStr} {$waktuMulai}:00",
+                'selesai' => "{$currDateStr} {$waktuSelesai}:00",
+                'tgl_mulai' => $currDateStr,
+                'tgl_selesai' => $currDateStr,
+            ];
+
+            $curr->addDay();
+            $count++;
+        }
+
+        return $schedules;
+    }
+
+    /**
+     * Menentukan sesi pemakaian aktif untuk peminjaman biasa (single day atau multihari).
+     * Aturan SIMPRU:
+     * - Peminjaman satu hari (tgl_mulai === tgl_selesai): 1 sesi pada tanggal tersebut.
+     * - Peminjaman biasa multihari (tgl_mulai !== tgl_selesai): setiap tanggal dari mulai s/d selesai
+     *   menghasilkan satu sesi harian aktual dengan interval jam yang konsisten.
+     *
+     * @return array<int, array{date: string, mulai: string, selesai: string, waktu_mulai: string, waktu_selesai: string}>
+     */
+    public function getEffectiveSessions(string $mulai, string $selesai): array
+    {
+        $m = Carbon::parse($mulai);
+        $s = Carbon::parse($selesai);
+
+        $startDate = $m->toDateString();
+        $endDate = $s->toDateString();
+
+        $waktuMulai = $m->format('H:i');
+        $waktuSelesai = $s->format('H:i');
+
+        if ($startDate === $endDate) {
+            return [
+                [
+                    'date' => $startDate,
+                    'mulai' => "{$startDate} {$waktuMulai}:00",
+                    'selesai' => "{$startDate} {$waktuSelesai}:00",
+                    'waktu_mulai' => $waktuMulai,
+                    'waktu_selesai' => $waktuSelesai,
+                ],
+            ];
+        }
+
+        $sessions = [];
+        $curr = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+        $count = 0;
+
+        while ($curr->lte($end) && $count < 60) {
+            $currDateStr = $curr->toDateString();
+            $sessions[] = [
+                'date' => $currDateStr,
+                'mulai' => "{$currDateStr} {$waktuMulai}:00",
+                'selesai' => "{$currDateStr} {$waktuSelesai}:00",
+                'waktu_mulai' => $waktuMulai,
+                'waktu_selesai' => $waktuSelesai,
+            ];
+            $curr->addDay();
+            $count++;
+        }
+
+        return $sessions;
+    }
+
+    /**
+     * Ambil sesi aktif dari record peminjaman yang tersimpan di database.
+     *
+     * @return array<int, array{date: string, mulai: string, selesai: string, waktu_mulai: string, waktu_selesai: string}>
+     */
+    public function getBookingEffectiveSessions(Peminjaman $booking): array
+    {
+        $startDate = $booking->tgl_mulai ?: ($booking->mulai ? Carbon::parse($booking->mulai)->toDateString() : null);
+        $endDate = $booking->tgl_selesai ?: ($booking->selesai ? Carbon::parse($booking->selesai)->toDateString() : $startDate);
+
+        if (! $startDate) {
+            return [];
+        }
+
+        $waktuMulai = $booking->waktu_mulai
+            ?: ($booking->mulai ? Carbon::parse($booking->mulai)->format('H:i') : '08:00');
+        $waktuSelesai = $booking->waktu_selesai
+            ?: ($booking->selesai ? Carbon::parse($booking->selesai)->format('H:i') : '16:00');
+
+        // Jika booking memiliki child records terpisah atau merupakan child record, baris ini hanya mewakili tanggal sesinya sendiri
+        if ($booking->recurringSchedules()->exists() || ! empty($booking->parent_id)) {
+            return [
+                [
+                    'date' => $startDate,
+                    'mulai' => "{$startDate} {$waktuMulai}:00",
+                    'selesai' => "{$startDate} {$waktuSelesai}:00",
+                    'waktu_mulai' => $waktuMulai,
+                    'waktu_selesai' => $waktuSelesai,
+                ],
+            ];
+        }
+
+        if (! $endDate || $startDate === $endDate) {
+            return [
+                [
+                    'date' => $startDate,
+                    'mulai' => "{$startDate} {$waktuMulai}:00",
+                    'selesai' => "{$startDate} {$waktuSelesai}:00",
+                    'waktu_mulai' => $waktuMulai,
+                    'waktu_selesai' => $waktuSelesai,
+                ],
+            ];
+        }
+
+        // Untuk booking multihari legacy tanpa child records terpisah
+        $sessions = [];
+        $curr = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+        $count = 0;
+
+        while ($curr->lte($end) && $count < 60) {
+            $currDateStr = $curr->toDateString();
+            $sessions[] = [
+                'date' => $currDateStr,
+                'mulai' => "{$currDateStr} {$waktuMulai}:00",
+                'selesai' => "{$currDateStr} {$waktuSelesai}:00",
+                'waktu_mulai' => $waktuMulai,
+                'waktu_selesai' => $waktuSelesai,
+            ];
+            $curr->addDay();
+            $count++;
+        }
+
+        return $sessions;
+    }
+
+    /**
      * Periksa bentrok jadwal peminjaman terhadap peminjaman berstatus 'Disetujui'.
-     * Menggunakan rumus interval overlap: mulai < request_selesai AND selesai > request_mulai
+     * Membandingkan identitas sumber daya, tanggal sesi aktual, dan interval jam aktual.
+     * Batas jam yang bersentuhan (misal 08.00-10.00 vs 10.00-12.00) DIPERBOLEHKAN (tidak bentrok).
      */
     public function detectConflicts(string $mulai, string $selesai, array $items, ?string $excludePeminjamanId = null): array
     {
         $conflicts = [];
-        $mulaiCarbon = Carbon::parse($mulai);
-        $selesaiCarbon = Carbon::parse($selesai);
+        $requestSessions = $this->getEffectiveSessions($mulai, $selesai);
+        if (empty($requestSessions)) {
+            return [];
+        }
+
+        $requestDates = array_column($requestSessions, 'date');
+        $minDate = min($requestDates);
+        $maxDate = max($requestDates);
 
         $query = Peminjaman::where('status', 'Disetujui');
 
@@ -69,18 +240,23 @@ class BookingService
             });
         }
 
-        $query->where(function ($q) use ($mulaiCarbon, $selesaiCarbon) {
-            $q->where(function ($sub) use ($mulaiCarbon, $selesaiCarbon) {
-                $sub->where('mulai', '<', $selesaiCarbon)
-                    ->where('selesai', '>', $mulaiCarbon);
-            })->orWhere(function ($sub) use ($mulaiCarbon, $selesaiCarbon) {
-                $sub->whereNull('mulai')
-                    ->where('tgl_mulai', '<=', $selesaiCarbon->toDateString())
-                    ->where('tgl_selesai', '>=', $mulaiCarbon->toDateString());
+        // Ambil kandidat peminjaman disetujui yang beririsan dengan rentang tanggal pengajuan
+        $query->where(function ($q) use ($minDate, $maxDate) {
+            $q->where(function ($sub) use ($minDate, $maxDate) {
+                $sub->whereDate('mulai', '<=', $maxDate)
+                    ->whereDate('selesai', '>=', $minDate);
+            })->orWhere(function ($sub) use ($minDate, $maxDate) {
+                $sub->where('tgl_mulai', '<=', $maxDate)
+                    ->where('tgl_selesai', '>=', $minDate);
             });
         });
 
-        $overlappingBookings = $query->with(['items.item', 'itemPeminjaman.item'])->get();
+        $candidateBookings = $query->with([
+            'items.item',
+            'itemPeminjaman.item',
+            'parent.items.item',
+            'parent.itemPeminjaman.item',
+        ])->get();
 
         foreach ($items as $reqItem) {
             $itemId = (int) ($reqItem['item_id'] ?? $reqItem['item']['id'] ?? 0);
@@ -91,38 +267,180 @@ class BookingService
                 continue;
             }
 
-            $bookedQty = 0;
-            $conflictDetails = [];
+            // Periksa setiap sesi aktif dari pengajuan baru
+            foreach ($requestSessions as $rSession) {
+                $bookedQtyOnSession = 0;
+                $sessionConflicts = [];
 
-            foreach ($overlappingBookings as $booking) {
-                $bItems = $this->consolidateItems($booking);
-                foreach ($bItems as $bookedItem) {
-                    if ((int) $bookedItem->item_id === $itemId) {
-                        $bookedQty += (int) $bookedItem->jumlah;
-                        $conflictDetails[] = [
-                            'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
-                            'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
-                            'mulai' => (string) $booking->mulai,
-                            'selesai' => (string) $booking->selesai,
-                            'keperluan' => $booking->keperluan,
-                        ];
+                foreach ($candidateBookings as $booking) {
+                    $bSessions = $this->getBookingEffectiveSessions($booking);
+                    foreach ($bSessions as $bSession) {
+                        // Harus pada tanggal yang sama persis
+                        if ($bSession['date'] !== $rSession['date']) {
+                            continue;
+                        }
+
+                        // Periksa tumpang tindih waktu: rMulai < bSelesai && rSelesai > bMulai
+                        // Batas bersentuhan (misal 08:00-10:00 vs 10:00-12:00) TIDAK bentrok
+                        $rStart = $rSession['waktu_mulai'];
+                        $rEnd = $rSession['waktu_selesai'];
+                        $bStart = $bSession['waktu_mulai'];
+                        $bEnd = $bSession['waktu_selesai'];
+
+                        if ($rStart < $bEnd && $rEnd > $bStart) {
+                            $bItems = $this->consolidateItems($booking);
+                            foreach ($bItems as $bookedItem) {
+                                if ((int) $bookedItem->item_id === $itemId) {
+                                    $bookedQtyOnSession += (int) $bookedItem->jumlah;
+                                    $sessionConflicts[] = [
+                                        'peminjaman_id' => $booking->id_peminjaman ?? $booking->id,
+                                        'peminjam' => $booking->nama_peminjam ?? $booking->nama_pemohon,
+                                        'date' => $bSession['date'],
+                                        'mulai' => $bSession['mulai'],
+                                        'selesai' => $bSession['selesai'],
+                                        'waktu_mulai' => $bSession['waktu_mulai'],
+                                        'waktu_selesai' => $bSession['waktu_selesai'],
+                                        'keperluan' => $booking->keperluan,
+                                        'jumlah' => (int) $bookedItem->jumlah,
+                                    ];
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            if (($bookedQty + $reqQty) > $itemModel->quantity) {
-                $conflicts[] = [
-                    'item_id' => $itemId,
-                    'item_nama' => $itemModel->nama,
-                    'kapasitas_total' => $itemModel->quantity,
-                    'sudah_dipinjam' => $bookedQty,
-                    'diminta' => $reqQty,
-                    'overlapping_bookings' => $conflictDetails,
-                ];
+                if (($bookedQtyOnSession + $reqQty) > $itemModel->quantity) {
+                    $conflicts[] = [
+                        'item_id' => $itemId,
+                        'item_nama' => $itemModel->nama,
+                        'session_date' => $rSession['date'],
+                        'session_waktu_mulai' => $rSession['waktu_mulai'],
+                        'session_waktu_selesai' => $rSession['waktu_selesai'],
+                        'kapasitas_total' => $itemModel->quantity,
+                        'sudah_dipinjam' => $bookedQtyOnSession,
+                        'diminta' => $reqQty,
+                        'overlapping_bookings' => $sessionConflicts,
+                    ];
+                }
             }
         }
 
         return $conflicts;
+    }
+
+    /**
+     * Validasi aturan hari operasional, jam kerja, dan hari libur nasional resmi 2026.
+     * Aturan:
+     * A. Ruangan:
+     *    - Pemohon eksternal boleh meminjam ruangan pada Sabtu dan Minggu (Aula Lantai 3).
+     *    - Tidak ada larangan akhir pekan maupun hari libur untuk ruangan.
+     * B. Kendaraan dan Perlengkapan:
+     *    - Jam operasional Senin–Kamis: 07.30–16.00 WIB.
+     *    - Jam operasional Jumat: 07.30–16.30 WIB.
+     *    - DILARANG dipesan pada Sabtu dan Minggu.
+     *    - DILARANG dipesan pada Hari Libur Nasional resmi Indonesia tahun 2026.
+     *    - Berlaku untuk pemohon internal maupun eksternal.
+     *
+     * @return array{valid: bool, message?: string}
+     */
+    public function validateOperationalRules(string $mulai, string $selesai, array $itemsPayload, bool $isExternal = false): array
+    {
+        $sessions = $this->getEffectiveSessions($mulai, $selesai);
+        $holidays = config('holidays.2026', []);
+
+        foreach ($itemsPayload as $item) {
+            $itemId = (int) ($item['item_id'] ?? $item['item']['id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            $itemModel = ItemJenis::with('jenis')->find($itemId);
+            if (! $itemModel) {
+                continue;
+            }
+
+            $category = self::CATEGORY_MAP[$itemModel->id_jenis]
+                ?? strtolower($itemModel->jenis?->nama ?? 'ruangan');
+
+            // Aturan khusus Kendaraan dan Perlengkapan
+            if (in_array($category, ['kendaraan', 'perlengkapan'])) {
+                foreach ($sessions as $session) {
+                    $dateStr = $session['date'];
+                    $carbonDate = Carbon::parse($dateStr);
+                    $dayOfWeek = $carbonDate->dayOfWeek; // 0 = Minggu, 6 = Sabtu
+                    $dateFormatted = $carbonDate->translatedFormat('d F Y');
+
+                    // 1. Larangan Akhir Pekan (Sabtu / Minggu)
+                    if ($dayOfWeek === 0 || $dayOfWeek === 6) {
+                        $dayName = $dayOfWeek === 0 ? 'Minggu' : 'Sabtu';
+
+                        return [
+                            'valid' => false,
+                            'message' => "Kendaraan dan perlengkapan dinas ({$itemModel->nama}) tidak dapat dipinjam pada akhir pekan ({$dayName}, {$dateFormatted}). Layanan hanya tersedia pada hari kerja.",
+                        ];
+                    }
+
+                    // 2. Larangan Hari Libur Nasional Resmi Indonesia 2026
+                    if (isset($holidays[$dateStr])) {
+                        $holidayName = $holidays[$dateStr];
+
+                        return [
+                            'valid' => false,
+                            'message' => "Kendaraan dan perlengkapan dinas ({$itemModel->nama}) tidak dapat dipinjam pada hari libur nasional ({$holidayName}, {$dateFormatted}).",
+                        ];
+                    }
+
+                    // 3. Batasan Jam Operasional
+                    // Senin–Kamis: 07.30–16.00 WIB
+                    // Jumat: 07.30–16.30 WIB
+                    $waktuMulai = $session['waktu_mulai'];
+                    $waktuSelesai = $session['waktu_selesai'];
+
+                    if ($dayOfWeek >= 1 && $dayOfWeek <= 4) {
+                        // Senin - Kamis
+                        if ($waktuMulai < '07:30' || $waktuSelesai > '16:00') {
+                            return [
+                                'valid' => false,
+                                'message' => "Jam operasional peminjaman {$category} ({$itemModel->nama}) pada hari Senin–Kamis adalah pukul 07.30–16.00 WIB (jadwal diajukan: {$waktuMulai}–{$waktuSelesai} WIB).",
+                            ];
+                        }
+                    } elseif ($dayOfWeek === 5) {
+                        // Jumat
+                        if ($waktuMulai < '07:30' || $waktuSelesai > '16:30') {
+                            return [
+                                'valid' => false,
+                                'message' => "Jam operasional peminjaman {$category} ({$itemModel->nama}) pada hari Jumat adalah pukul 07.30–16.30 WIB (jadwal diajukan: {$waktuMulai}–{$waktuSelesai} WIB).",
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return ['valid' => true];
+    }
+
+    /**
+     * Format rentang waktu peminjaman untuk tampilan pesan bentrok yang informatif.
+     */
+    public function formatBookingTimeRange(?string $mulai, ?string $selesai): string
+    {
+        if (! $mulai || ! $selesai) {
+            return '';
+        }
+
+        try {
+            $m = Carbon::parse($mulai);
+            $s = Carbon::parse($selesai);
+
+            if ($m->toDateString() === $s->toDateString()) {
+                return $m->translatedFormat('d F Y').' ('.$m->format('H:i').' - '.$s->format('H:i').' WIB)';
+            }
+
+            return $m->translatedFormat('d M Y H:i').' s/d '.$s->translatedFormat('d M Y H:i').' WIB';
+        } catch (\Throwable) {
+            return "{$mulai} s/d {$selesai}";
+        }
     }
 
     /**
@@ -189,6 +507,7 @@ class BookingService
 
             $schedules = [];
             if ($isRecurring && $recurringEndDate) {
+                $bookingType = 'recurring';
                 $schedules = $this->generateWeeklySchedules(
                     $validated['mulai'],
                     $validated['selesai'],
@@ -202,7 +521,20 @@ class BookingService
                         'conflicts' => [],
                     ];
                 }
+            } elseif (substr($validated['mulai'], 0, 10) !== substr($validated['selesai'], 0, 10)) {
+                $bookingType = 'multiday';
+                $isRecurring = false;
+                $recurringFrequency = null;
+                $recurringEndDate = null;
+                $schedules = $this->generateDailySchedules(
+                    $validated['mulai'],
+                    $validated['selesai']
+                );
             } else {
+                $bookingType = 'single';
+                $isRecurring = false;
+                $recurringFrequency = null;
+                $recurringEndDate = null;
                 $tglMulai = substr($validated['mulai'], 0, 10);
                 $tglSelesai = substr($validated['selesai'], 0, 10);
                 $schedules = [
@@ -217,18 +549,44 @@ class BookingService
                 ];
             }
 
-            // Validasi ketersediaan untuk setiap jadwal yang dihasilkan
+            $applicantType = $additionalData['applicant_type'] ?? $validated['applicant_type'] ?? null;
+            $pihakPemohonInput = $additionalData['pihak_pemohon'] ?? $validated['pihak_pemohon'] ?? null;
+            $isExternal = ($applicantType === 'external') || ($pihakPemohonInput && (str_contains(strtolower($pihakPemohonInput), 'eksternal') || str_contains(strtolower($pihakPemohonInput), 'external')));
+
+            // 1. Validasi aturan operasional (jam kerja, hari kerja, hari libur nasional 2026)
+            foreach ($schedules as $sched) {
+                $opResult = $this->validateOperationalRules($sched['mulai'], $sched['selesai'], $itemsPayload, $isExternal);
+                if (! $opResult['valid']) {
+                    return [
+                        'success' => false,
+                        'message' => $opResult['message'] ?? 'Permohonan melanggar aturan operasional sarana prasarana.',
+                        'conflicts' => [],
+                    ];
+                }
+            }
+
+            // 2. Validasi ketersediaan dan bentrok jadwal untuk setiap jadwal yang dihasilkan
             foreach ($schedules as $sched) {
                 $conflicts = $this->detectConflicts($sched['mulai'], $sched['selesai'], $itemsPayload);
                 if (! empty($conflicts)) {
+                    $firstConflict = $conflicts[0];
                     $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-                    $dateLabel = Carbon::parse($sched['date'])->translatedFormat('d F Y');
+                    $dateLabel = Carbon::parse($firstConflict['session_date'] ?? $sched['date'])->translatedFormat('d F Y');
+                    $reqTime = ($firstConflict['session_waktu_mulai'] ?? '').'-'.($firstConflict['session_waktu_selesai'] ?? '').' WIB';
+
+                    $existingDetail = '';
+                    if (! empty($firstConflict['overlapping_bookings'][0])) {
+                        $firstOverlap = $firstConflict['overlapping_bookings'][0];
+                        $oldTime = ($firstOverlap['waktu_mulai'] ?? '').'-'.($firstOverlap['waktu_selesai'] ?? '').' WIB';
+                        $peminjamOld = $firstOverlap['peminjam'] ?? 'peminjam lain';
+                        $existingDetail = " (jadwal lama: {$oldTime} oleh {$peminjamOld})";
+                    }
 
                     return [
                         'success' => false,
-                        'message' => "Jadwal bentrok pada {$dateLabel}: {$conflictItemNames} sudah dipinjam pada rentang waktu yang sama.",
+                        'message' => "Jadwal bentrok pada {$dateLabel}: {$conflictItemNames} sudah dipinjam pada rentang waktu {$reqTime}{$existingDetail}.",
                         'conflicts' => $conflicts,
-                        'conflicting_date' => $sched['date'],
+                        'conflicting_date' => $firstConflict['session_date'] ?? $sched['date'],
                     ];
                 }
             }
@@ -240,7 +598,8 @@ class BookingService
             $pihakPemohonInput = $additionalData['pihak_pemohon'] ?? $validated['pihak_pemohon'] ?? null;
             $isExternal = ($applicantType === 'external') || ($pihakPemohonInput && (str_contains(strtolower($pihakPemohonInput), 'eksternal') || str_contains(strtolower($pihakPemohonInput), 'external')));
             $pihakPemohon = $isExternal ? ($pihakPemohonInput ?: 'Eksternal (Madrasah/KUA/Lainnya)') : ($pihakPemohonInput ?: 'Internal Kemenag Sleman');
-            $nipToStore = $isExternal ? null : (! empty($validated['nip']) ? $validated['nip'] : null);
+            $nipRaw = isset($validated['nip']) ? trim((string) $validated['nip']) : null;
+            $nipToStore = ($nipRaw !== '' && $nipRaw !== null) ? $nipRaw : null;
 
             $firstSched = $schedules[0];
             $waktuMulai = strlen($firstSched['mulai']) >= 16 ? substr($firstSched['mulai'], 11, 5) : '08:00';
@@ -251,6 +610,7 @@ class BookingService
                 'id' => $parentNewId,
                 'parent_id' => null,
                 'is_recurring' => $isRecurring,
+                'booking_type' => $bookingType,
                 'recurring_frequency' => $isRecurring ? $recurringFrequency : null,
                 'recurring_end_date' => $isRecurring ? $recurringEndDate : null,
                 'tgl_pengajuan' => $now->toDateString(),
@@ -294,8 +654,8 @@ class BookingService
                 }
             }
 
-            // Jika permohonan berulang, buat jadwal turunan untuk pertemuan ke-2 sampai selesai
-            if ($isRecurring && count($schedules) > 1) {
+            // Jika permohonan memiliki banyak jadwal (baik berulang mingguan maupun multihari), buat sesi turunan
+            if (count($schedules) > 1) {
                 for ($i = 1; $i < count($schedules); $i++) {
                     $childSched = $schedules[$i];
                     $childId = $this->generateNextId($now);
@@ -306,9 +666,10 @@ class BookingService
                         'id_peminjaman' => $childId,
                         'id' => $childId,
                         'parent_id' => $parentNewId,
-                        'is_recurring' => true,
-                        'recurring_frequency' => $recurringFrequency,
-                        'recurring_end_date' => $recurringEndDate,
+                        'is_recurring' => $isRecurring,
+                        'booking_type' => $bookingType,
+                        'recurring_frequency' => $isRecurring ? $recurringFrequency : null,
+                        'recurring_end_date' => $isRecurring ? $recurringEndDate : null,
                         'tgl_pengajuan' => $now->toDateString(),
                         'nip' => $nipToStore,
                         'nama_peminjam' => $validated['nama_peminjam'],
@@ -331,24 +692,6 @@ class BookingService
                         'status' => 'Menunggu Persetujuan',
                         'petugas' => null,
                     ]);
-
-                    foreach ($itemsPayload as $item) {
-                        if (Schema::hasTable('item_peminjaman')) {
-                            ItemPeminjaman::create([
-                                'id_peminjaman' => $childId,
-                                'item_id' => $item['item_id'],
-                                'jumlah' => $item['jumlah'],
-                            ]);
-                        }
-
-                        if (Schema::hasTable('peminjaman_items')) {
-                            PeminjamanItem::create([
-                                'peminjaman_id' => $childId,
-                                'item_id' => $item['item_id'],
-                                'jumlah' => $item['jumlah'],
-                            ]);
-                        }
-                    }
                 }
             }
 
@@ -361,7 +704,7 @@ class BookingService
 
     /**
      * Persetujuan peminjaman oleh admin dengan validasi ulang konflik ketersediaan & row lock.
-     * Otomatis memvalidasi dan menyetujui seluruh jadwal jika merupakan seri peminjaman berulang.
+     * Otomatis memvalidasi dan menyetujui seluruh jadwal jika merupakan seri peminjaman berulang atau multihari.
      */
     public function approvePeminjaman(Peminjaman $peminjaman, ?string $petugas = null): array
     {
@@ -370,7 +713,7 @@ class BookingService
             : $peminjaman;
 
         $allToApprove = collect([$root]);
-        if ($root->is_recurring && $root->recurringSchedules()->exists()) {
+        if ($root->recurringSchedules()->exists()) {
             $allToApprove = $allToApprove->concat($root->recurringSchedules);
         }
         $allToApprove = $allToApprove->filter(fn ($rec) => $rec->status !== 'Dibatalkan');
@@ -397,12 +740,22 @@ class BookingService
             );
 
             if (! empty($conflicts)) {
+                $firstConflict = $conflicts[0];
                 $conflictItemNames = implode(', ', array_unique(array_column($conflicts, 'item_nama')));
-                $dateLabel = Carbon::parse($rec->tgl_mulai)->translatedFormat('d F Y');
+                $dateLabel = Carbon::parse($firstConflict['session_date'] ?? $rec->tgl_mulai)->translatedFormat('d F Y');
+                $reqTime = ($firstConflict['session_waktu_mulai'] ?? '').'-'.($firstConflict['session_waktu_selesai'] ?? '').' WIB';
+
+                $existingDetail = '';
+                if (! empty($firstConflict['overlapping_bookings'][0])) {
+                    $firstOverlap = $firstConflict['overlapping_bookings'][0];
+                    $oldTime = ($firstOverlap['waktu_mulai'] ?? '').'-'.($firstOverlap['waktu_selesai'] ?? '').' WIB';
+                    $peminjamOld = $firstOverlap['peminjam'] ?? 'peminjam lain';
+                    $existingDetail = " (jadwal lama: {$oldTime} oleh {$peminjamOld})";
+                }
 
                 return [
                     'success' => false,
-                    'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada tanggal {$dateLabel} untuk {$conflictItemNames} dengan peminjaman lain yang sudah disetujui.",
+                    'message' => "Tidak dapat menyetujui peminjaman: terdapat jadwal bentrok pada tanggal {$dateLabel} untuk {$conflictItemNames} (jam {$reqTime}) dengan peminjaman lain yang sudah disetujui{$existingDetail}.",
                     'conflicts' => $conflicts,
                 ];
             }
@@ -422,12 +775,130 @@ class BookingService
 
     /**
      * Ambil daftar item gabungan unik dari items dan itemPeminjaman (menjamin kompatibilitas historis).
+     * Sesi anak secara otomatis mewarisi item dari pengajuan induk tanpa menduplikasi pivot tabel.
      */
     public function consolidateItems(Peminjaman $peminjaman): Collection
     {
         $allItems = $peminjaman->items->concat($peminjaman->itemPeminjaman)->filter(fn ($it) => ! empty($it->item_id));
 
+        if ($allItems->isEmpty() && ! empty($peminjaman->parent_id)) {
+            $parent = $peminjaman->relationLoaded('parent')
+                ? $peminjaman->parent
+                : Peminjaman::with(['items.item.jenis', 'itemPeminjaman.item.jenis'])
+                    ->where('id_peminjaman', $peminjaman->parent_id)
+                    ->orWhere('id', $peminjaman->parent_id)
+                    ->first();
+
+            if ($parent) {
+                $allItems = $parent->items->concat($parent->itemPeminjaman)->filter(fn ($it) => ! empty($it->item_id));
+            }
+        }
+
         return $allItems->unique(fn ($it) => (int) $it->item_id)->values();
+    }
+
+    /**
+     * Memastikan peminjaman multihari legacy memiliki record sesi harian anak
+     * tanpa menduplikasi data atau pivot tabel item_peminjaman.
+     */
+    public function ensureMultidayChildSessions(Peminjaman $peminjaman): int
+    {
+        if (! empty($peminjaman->parent_id) || (bool) $peminjaman->is_recurring) {
+            return 0;
+        }
+
+        $startDate = $peminjaman->tgl_mulai ?: ($peminjaman->mulai ? substr((string) $peminjaman->mulai, 0, 10) : null);
+        $endDate = $peminjaman->tgl_selesai ?: ($peminjaman->selesai ? substr((string) $peminjaman->selesai, 0, 10) : $startDate);
+
+        if (! $startDate || ! $endDate || $startDate === $endDate) {
+            return 0;
+        }
+
+        if ($peminjaman->recurringSchedules()->exists()) {
+            return 0;
+        }
+
+        $mulaiStr = $peminjaman->mulai ?: ($startDate.' '.($peminjaman->waktu_mulai ?: '08:00'));
+        $selesaiStr = $peminjaman->selesai ?: ($endDate.' '.($peminjaman->waktu_selesai ?: '16:00'));
+
+        $schedules = $this->generateDailySchedules($mulaiStr, $selesaiStr);
+        if (count($schedules) <= 1) {
+            return 0;
+        }
+
+        $parentId = $peminjaman->id_peminjaman ?? $peminjaman->id;
+
+        $created = DB::transaction(function () use ($parentId, $startDate, $endDate) {
+            $parentLocked = Peminjaman::where('id', $parentId)
+                ->orWhere('id_peminjaman', $parentId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $parentLocked || $parentLocked->recurringSchedules()->exists()) {
+                return 0;
+            }
+
+            $mulaiStr = $parentLocked->mulai ?: ($startDate.' '.($parentLocked->waktu_mulai ?: '08:00'));
+            $selesaiStr = $parentLocked->selesai ?: ($endDate.' '.($parentLocked->waktu_selesai ?: '16:00'));
+
+            $schedules = $this->generateDailySchedules($mulaiStr, $selesaiStr);
+            if (count($schedules) <= 1) {
+                return 0;
+            }
+
+            $now = Carbon::now();
+            $createdCount = 0;
+
+            $parentLocked->booking_type = 'multiday';
+            $parentLocked->is_recurring = false;
+            $parentLocked->save();
+
+            for ($i = 1; $i < count($schedules); $i++) {
+                $childSched = $schedules[$i];
+                $childId = $this->generateNextId($now);
+                $cWaktuMulai = strlen($childSched['mulai']) >= 16 ? substr($childSched['mulai'], 11, 5) : ($parentLocked->waktu_mulai ?: '08:00');
+                $cWaktuSelesai = strlen($childSched['selesai']) >= 16 ? substr($childSched['selesai'], 11, 5) : ($parentLocked->waktu_selesai ?: '16:00');
+
+                Peminjaman::create([
+                    'id_peminjaman' => $childId,
+                    'id' => $childId,
+                    'parent_id' => $parentId,
+                    'is_recurring' => false,
+                    'booking_type' => 'multiday',
+                    'recurring_frequency' => null,
+                    'recurring_end_date' => null,
+                    'tgl_pengajuan' => $parentLocked->tgl_pengajuan ?? $now->toDateString(),
+                    'nip' => $parentLocked->nip,
+                    'nama_peminjam' => $parentLocked->nama_peminjam,
+                    'nama_pemohon' => $parentLocked->nama_pemohon ?? $parentLocked->nama_peminjam,
+                    'unit_kerja' => $parentLocked->unit_kerja,
+                    'unit_pemohon' => $parentLocked->unit_pemohon ?? $parentLocked->unit_kerja,
+                    'pihak_pemohon' => $parentLocked->pihak_pemohon,
+                    'nomor_hp' => $parentLocked->nomor_hp,
+                    'penanggung_jawab' => $parentLocked->penanggung_jawab,
+                    'jumlah_peserta' => $parentLocked->jumlah_peserta ?: 1,
+                    'mulai' => $childSched['mulai'],
+                    'selesai' => $childSched['selesai'],
+                    'tgl_mulai' => $childSched['tgl_mulai'],
+                    'tgl_selesai' => $childSched['tgl_selesai'],
+                    'waktu_mulai' => $cWaktuMulai,
+                    'waktu_selesai' => $cWaktuSelesai,
+                    'keperluan' => $parentLocked->keperluan,
+                    'surat_peminjaman' => $parentLocked->surat_peminjaman,
+                    'surat_url' => $parentLocked->surat_url,
+                    'status' => $parentLocked->status,
+                    'petugas' => $parentLocked->petugas,
+                ]);
+
+                $createdCount++;
+            }
+
+            return $createdCount;
+        });
+
+        $peminjaman->refresh();
+
+        return $created;
     }
 
     /**

@@ -59,10 +59,11 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
 
   // Robust date-range check for each cell:
   // For recurring bookings, each individual session is stored on its specific occurrence date.
-  // For normal bookings (peminjaman biasa), according to user requirement:
-  // "tanggal yang dipilih tersebut harus ditampilkan pada tanggal 22 dan 30 Oktober saja. Jangan membuat event tambahan pada setiap tanggal di antaranya."
+  // For normal multi-day bookings (peminjaman biasa multihari):
+  // According to SIMPRU business rules: shows continuously from start date to end date.
+  // Start date displays 'Mulai', intermediate dates display 'Berlangsung', and end date displays 'Habis'.
   const getEventsForDate = (cellDateStr: string): MasterPeminjaman[] => {
-    return events.filter((ev) => {
+    const matched = events.filter((ev) => {
       const start = (ev.tgl_mulai ?? ev.mulai ?? '').substring(0, 10);
       const end = (ev.tgl_selesai ?? ev.selesai ?? start).substring(0, 10);
       if (!start) return false;
@@ -71,8 +72,17 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
         return cellDateStr === start;
       }
 
-      // Normal multi-day booking: show on start and end date only, not on intermediate dates!
-      return cellDateStr === start || cellDateStr === end;
+      // Normal multi-day booking: continuous range from start to end
+      return cellDateStr >= start && cellDateStr <= end;
+    });
+
+    // Prevent duplicate cards for the exact same event on this date
+    const seen = new Set<string>();
+    return matched.filter((ev) => {
+      const key = ev.id || ev.id_peminjaman || '';
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
   };
 
