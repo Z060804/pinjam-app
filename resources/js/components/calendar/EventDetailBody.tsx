@@ -89,9 +89,40 @@ export const EventDetailBody: React.FC<EventDetailBodyProps> = ({ event }) => {
         <p className="text-sm font-bold text-slate-800">{waktuMulai} – {waktuSelesai} WIB</p>
       </div>
 
+      {/* Penanda Visual Peminjaman Multihari jika Berlaku */}
+      {(event.booking_type === 'multiday' || Boolean(event.is_multiday)) && (
+        <div className="p-3 rounded-2xl bg-teal-50/80 border border-teal-200/80 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-900">
+              <Calendar className="w-3.5 h-3.5 text-teal-600" />
+              Peminjaman Multihari
+            </span>
+            {event.range_indicator && (
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-teal-200/70 text-teal-900 border border-teal-300">
+                {event.range_indicator}
+              </span>
+            )}
+          </div>
+          {event.total_sessions && event.total_sessions > 1 && (
+            <p className="text-[11px] text-teal-700">
+              Rangkaian jadwal: Sesi {event.session_number ?? 1} dari {event.total_sessions}
+            </p>
+          )}
+          {(event.parent_registration_id ?? event.parent_id) && (
+            <p className="text-[10px] font-mono text-teal-600">
+              Registrasi Induk: {event.parent_registration_id ?? event.parent_id}
+            </p>
+          )}
+        </div>
+      )}
+
       <div>
         <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">STATUS</p>
-        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800">
+        <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full ${
+          event.status === 'Dibatalkan'
+            ? 'bg-rose-100 text-rose-800'
+            : 'bg-emerald-100 text-emerald-800'
+        }`}>
           <CheckCircle2 className="w-3.5 h-3.5" />
           {event.status ?? 'Disetujui'}
         </span>

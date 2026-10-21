@@ -71,7 +71,7 @@ export const KetersediaanView: React.FC<KetersediaanViewProps> = ({
   });
 
   const approvedEvents = peminjamanList.filter(
-    (p) => p.status === STATUS_PEMINJAMAN.DISETUJUI
+    (p) => p.status === STATUS_PEMINJAMAN.DISETUJUI || p.status === STATUS_PEMINJAMAN.DIBATALKAN
   );
 
   if (loading) {

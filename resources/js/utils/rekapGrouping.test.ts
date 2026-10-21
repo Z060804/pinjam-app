@@ -162,7 +162,7 @@ describe('groupPermohonanForRekap', () => {
     expect(series.total_sessions).toBe(4);
     expect(series.active_sessions_count).toBe(3);
     expect(series.cancelled_sessions_count).toBe(1);
-    expect(series.status_summary).toBe('3 aktif, 1 dibatalkan');
+    expect(series.status_summary).toBe('3 sesi aktif, 1 dibatalkan');
     expect(series.status).toBe('Menunggu Persetujuan'); // Induk & sesi aktif masih Menunggu
   });
 
@@ -177,6 +177,83 @@ describe('groupPermohonanForRekap', () => {
     expect(res[0].status).toBe('Dibatalkan');
     expect(res[0].cancelled_sessions_count).toBe(4);
     expect(res[0].active_sessions_count).toBe(0);
+  });
+
+  it('groups multiday booking (2–6 Okt) into ONE row with booking_type multiday, is_recurring false, and correct summary', () => {
+    const multiDaySessions: Permohonan[] = [
+      {
+        ...normalLoan,
+        id: 'PMJ-MULTI-ROOT',
+        id_peminjaman: 'PMJ-MULTI-ROOT',
+        booking_type: 'multiday',
+        is_recurring: false,
+        parent_id: null,
+        tgl_mulai: '2026-10-02',
+        tgl_selesai: '2026-10-02',
+        status: 'Disetujui',
+      },
+      {
+        ...normalLoan,
+        id: 'PMJ-MULTI-02',
+        id_peminjaman: 'PMJ-MULTI-02',
+        booking_type: 'multiday',
+        is_recurring: false,
+        parent_id: 'PMJ-MULTI-ROOT',
+        tgl_mulai: '2026-10-03',
+        tgl_selesai: '2026-10-03',
+        status: 'Disetujui',
+      },
+      {
+        ...normalLoan,
+        id: 'PMJ-MULTI-03',
+        id_peminjaman: 'PMJ-MULTI-03',
+        booking_type: 'multiday',
+        is_recurring: false,
+        parent_id: 'PMJ-MULTI-ROOT',
+        tgl_mulai: '2026-10-04',
+        tgl_selesai: '2026-10-04',
+        status: 'Dibatalkan', // Sesi tgl 4 dibatalkan
+      },
+      {
+        ...normalLoan,
+        id: 'PMJ-MULTI-04',
+        id_peminjaman: 'PMJ-MULTI-04',
+        booking_type: 'multiday',
+        is_recurring: false,
+        parent_id: 'PMJ-MULTI-ROOT',
+        tgl_mulai: '2026-10-05',
+        tgl_selesai: '2026-10-05',
+        status: 'Disetujui',
+      },
+      {
+        ...normalLoan,
+        id: 'PMJ-MULTI-05',
+        id_peminjaman: 'PMJ-MULTI-05',
+        booking_type: 'multiday',
+        is_recurring: false,
+        parent_id: 'PMJ-MULTI-ROOT',
+        tgl_mulai: '2026-10-06',
+        tgl_selesai: '2026-10-06',
+        status: 'Disetujui',
+      },
+    ];
+
+    const res = groupPermohonanForRekap(multiDaySessions);
+    expect(res).toHaveLength(1);
+
+    const row = res[0];
+    expect(row.id).toBe('PMJ-MULTI-ROOT');
+    expect(row.booking_type).toBe('multiday');
+    expect(row.is_multiday).toBe(true);
+    expect(row.is_recurring).toBe(false); // TIDAK boleh dikategorikan sebagai is_recurring
+    expect(row.tgl_mulai).toBe('2026-10-02');
+    expect(row.tgl_selesai).toBe('2026-10-06');
+    expect(row.total_sessions).toBe(5);
+    expect(row.active_sessions_count).toBe(4);
+    expect(row.cancelled_sessions_count).toBe(1);
+    expect(row.status_summary).toBe('4 sesi aktif, 1 dibatalkan');
+    expect(row.status).toBe('Disetujui');
+    expect(row.recurring_schedules).toHaveLength(5);
   });
 
   it('orders records chronologically ascending: October comes before November', () => {
@@ -214,7 +291,7 @@ describe('groupPermohonanForRekap', () => {
       id: 'PMJ-OCT-22',
       id_peminjaman: 'PMJ-OCT-22',
       tgl_mulai: '2026-10-22',
-      tgl_selesai: '2026-10-30',
+      tgl_selesai: '2026-10-22',
     };
 
     // Masukkan dalam urutan acak/terbalik
