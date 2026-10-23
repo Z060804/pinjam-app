@@ -197,7 +197,7 @@ pipeline {
             fi
 
             echo "[OK] app running (CID=$CID)"
-          '
+          ' 
         '''
       }
     }
