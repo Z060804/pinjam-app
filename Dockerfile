@@ -1,4 +1,4 @@
-FROM node:20-alpine AS node-builder
+FROM node:22.23.4-alpine AS node-builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY public ./public
 RUN npm run build
 
 
-FROM php:8.3-fpm-alpine
+FROM php:8.3.36-fpm-alpine
 
 RUN apk add --no-cache \
     nginx \
