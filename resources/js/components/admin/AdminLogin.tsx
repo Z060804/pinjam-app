@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Globe } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import { AdminLoginForm } from './AdminLoginForm';
 
 interface AdminLoginProps {
@@ -13,16 +13,12 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
 
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white shadow-lg border border-slate-200/80 mb-4">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white shadow-lg border border-slate-200/80 mb-4 p-2.5">
             <img
-              src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Kemenag.svg/1200px-Kemenag.svg.png"
-              alt="Kemenag"
-              className="w-12 h-12 object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
+              src="/kemenag-logo.webp"
+              alt="Logo Kemenag Sleman"
+              className="w-full h-full object-contain"
             />
-            <Shield className="w-10 h-10 text-[#009966] hidden" />
           </div>
           <p className="text-xs font-bold tracking-widest text-[#009966] uppercase mb-1">
             Administrasi SIMPRU

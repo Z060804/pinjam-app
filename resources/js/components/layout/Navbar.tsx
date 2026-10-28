@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ActiveTab } from '../../types';
-import { Building2, Calendar, FilePlus2, Search, Menu, X, Landmark } from 'lucide-react';
+import { Calendar, FilePlus2, Search, Menu, X, Landmark } from 'lucide-react';
 
 interface NavbarProps {
   activeTab?: ActiveTab;
@@ -46,8 +46,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab: propActiveTab, onTabC
             onClick={() => handleSelect('beranda', '/')}
             className="flex items-center gap-3 text-left group cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#009966] flex items-center justify-center border border-emerald-100 group-hover:scale-105 transition-transform">
-              <Building2 className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center border border-slate-200/80 p-1 group-hover:scale-105 transition-transform shadow-xs shrink-0">
+              <img
+                src="/kemenag-logo.webp"
+                alt="Logo Kemenag Sleman"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <div className="text-base font-bold tracking-tight text-slate-900 flex items-center gap-2">

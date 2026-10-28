@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Building2, LogOut, LayoutDashboard, DoorOpen, Car, Package, Globe } from 'lucide-react';
+import { LogOut, LayoutDashboard, DoorOpen, Car, Package, Globe } from 'lucide-react';
 import { AdminActiveTab } from '../../types/admin';
 
 interface AdminNavbarProps {
@@ -49,8 +49,12 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-3 sm:gap-4">
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-100 shrink-0">
-              <Building2 className="w-5 h-5 text-[#009966]" />
+            <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center border border-slate-200/80 p-1 shrink-0 shadow-xs">
+              <img
+                src="/kemenag-logo.webp"
+                alt="Logo Kemenag Sleman"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <div className="text-sm font-bold text-slate-900 leading-none">SIMPRU Admin</div>
